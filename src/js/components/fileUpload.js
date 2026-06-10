@@ -10,6 +10,7 @@ const FILE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const LINK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7a5 5 0 0 1 0-10h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><path d="M8 12h8"/></svg>`
 const TEXT_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14M5 10h14M5 15h9M5 20h6"/></svg>`
 const MIC_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4M9 21h6"/></svg>`
+const VIDEO_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="14" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></svg>`
 const TRASH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M10 11v6M14 11v6"/></svg>`
 
 const PRESET_TABS = [
@@ -21,6 +22,7 @@ const OPTION_TILES = [
   { id: 'link',      label: 'Link',      icon: LINK_ICON },
   { id: 'text',      label: 'Text',      icon: TEXT_ICON },
   { id: 'recording', label: 'Recording', icon: MIC_ICON },
+  { id: 'video',     label: 'Video',     icon: VIDEO_ICON },
 ]
 
 export function render() {
@@ -74,9 +76,19 @@ export function render() {
           <div class="upload-zone" id="recording-zone">
             <div class="upload-icon">🎙</div>
             <div class="upload-title">Select an audio recording</div>
-            <div class="upload-subtitle">.mp3, .wav, .m4a</div>
+            <div class="upload-subtitle">.mp3, .wav, .m4a (max 4MB)</div>
             <button class="btn btn-primary" id="btn-choose-recording">+ Choose audio file</button>
             <input type="file" id="recording-input" accept="audio/*" style="display:none" />
+          </div>
+        </div>
+
+        <div class="upload-option-panel hidden" data-panel="video" id="panel-video">
+          <div class="upload-zone" id="video-zone">
+            <div class="upload-icon">🎬</div>
+            <div class="upload-title">Select a video file</div>
+            <div class="upload-subtitle">.mp4, .mov, .webm (max 4MB)</div>
+            <button class="btn btn-primary" id="btn-choose-video">+ Choose video file</button>
+            <input type="file" id="video-input" accept="video/*" style="display:none" />
           </div>
         </div>
       </div>
@@ -133,6 +145,7 @@ export function init(onFileLoaded, onCapturedInput) {
   initLinkPanel()
   initTextPanel()
   initRecordingPanel()
+  initVideoPanel()
   initUploadModal()
 }
 
@@ -272,8 +285,43 @@ function initRecordingPanel() {
     const file = input.files[0]
     input.value = ''
     if (!file) return
-    _onCapturedInput?.('recording', file.name)
-    showToast(`"${file.name}" captured as a recording reference`, 'success')
+    if (file.size > 4 * 1024 * 1024) {
+      showToast('Audio file is too large (max 4MB)', 'error')
+      return
+    }
+    _onCapturedInput?.('recording', file)
+    showToast(`"${file.name}" captured — transcribing on generate`, 'success')
+  })
+}
+
+// ── Video panel ──────────────────────────────────────────────────────────────
+
+function initVideoPanel() {
+  const zone = document.getElementById('video-zone')
+  const chooseBtn = document.getElementById('btn-choose-video')
+  const input = document.getElementById('video-input')
+
+  const openPicker = (e) => {
+    if (chooseBtn.contains(e.target)) return
+    input.click()
+  }
+
+  zone.addEventListener('click', openPicker)
+  chooseBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    input.click()
+  })
+
+  input.addEventListener('change', () => {
+    const file = input.files[0]
+    input.value = ''
+    if (!file) return
+    if (file.size > 4 * 1024 * 1024) {
+      showToast('Video file is too large (max 4MB)', 'error')
+      return
+    }
+    _onCapturedInput?.('video', file)
+    showToast(`"${file.name}" captured — analyzing on generate`, 'success')
   })
 }
 

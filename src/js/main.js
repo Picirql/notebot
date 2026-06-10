@@ -9,6 +9,7 @@ import { renderMarkdown } from './services/markdown.js'
 // ── App state ────────────────────────────────────────────────────────────────
 let currentFile = null
 let currentFileContent = null
+let currentLinkUrl = null
 let currentMetadata = null
 let currentNoteId = null
 let currentView = 'landing' // 'landing' | 'workspace'
@@ -94,6 +95,7 @@ function onNoteDelete(deletedId) {
 }
 
 function onFileLoaded(file, content) {
+  currentLinkUrl = null
   if (!file) {
     currentFile = null
     currentFileContent = null
@@ -109,46 +111,62 @@ function onFileLoaded(file, content) {
   setView('workspace')
 }
 
-// ── Simulated input wrapping ─────────────────────────────────────────────────
-// The Link/Text/Recording option tiles don't produce a real file. To reuse the
-// existing file-based /generate pipeline without touching the server APIs, we
-// wrap whatever textual data they capture in a mock File the same way a real
-// upload would arrive.
+// ── Captured input handling ─────────────────────────────────────────────────
+// The Text option tile doesn't produce a real file, so we wrap it in a mock
+// File the same way a real upload would arrive. Link is sent to the server as
+// a URL to fetch; Recording sends the real audio file for transcription.
 
 function onCapturedInput(kind, data) {
-  let textData = data
-  let filename = 'input.txt'
-
-  switch (kind) {
-    case 'link':
-      filename = 'link-reference.txt'
-      textData = `Reference link provided by the user:\n${data}`
-      break
-    case 'recording':
-      filename = 'recording-reference.txt'
-      textData = `Audio recording provided by the user: ${data}`
-      break
-    case 'text':
-    default:
-      filename = 'input.txt'
-      textData = data
-      break
+  if (kind === 'link') {
+    currentFile = null
+    currentFileContent = null
+    currentLinkUrl = data
+    currentMetadata = { segmentCount: 0, duration: 'N/A', topic: 'Web Link', isPlainText: true }
+    fileUpload.updateUploadInfo(data, currentMetadata)
+    promptInput.setEnabled(true)
+    setView('workspace')
+    return
   }
 
-  const mockFile = new File([textData], filename, { type: 'text/plain' })
-  onFileLoaded(mockFile, textData)
+  if (kind === 'recording') {
+    currentLinkUrl = null
+    currentFile = data
+    currentFileContent = null
+    currentMetadata = { segmentCount: 0, duration: 'N/A', topic: 'Audio Recording', isPlainText: true }
+    fileUpload.updateUploadInfo(data.name, currentMetadata)
+    promptInput.setEnabled(true)
+    setView('workspace')
+    return
+  }
+
+  if (kind === 'video') {
+    currentLinkUrl = null
+    currentFile = data
+    currentFileContent = null
+    currentMetadata = { segmentCount: 0, duration: 'N/A', topic: 'Video', isPlainText: true }
+    fileUpload.updateUploadInfo(data.name, currentMetadata)
+    promptInput.setEnabled(true)
+    setView('workspace')
+    return
+  }
+
+  // 'text'
+  const mockFile = new File([data], 'input.txt', { type: 'text/plain' })
+  onFileLoaded(mockFile, data)
 }
 
 async function onGenerate(prompt, preset) {
-  if (!currentFile) {
-    showToast('Please upload a class resource file first', 'error')
+  if (!currentFile && !currentLinkUrl) {
+    showToast('Please upload a class resource, link, or recording first', 'error')
     return
   }
+
+  const sourceLabel = currentFile ? currentFile.name : currentLinkUrl
 
   promptInput.setLoading(true)
   noteViewer.clear()
   noteViewer.show()
-  noteViewer.setBreadcrumb(currentFile.name)
+  noteViewer.setBreadcrumb(sourceLabel)
   currentNoteId = null
   sidebar.setActive(null)
   setSaveBtn('pending')
@@ -157,7 +175,7 @@ async function onGenerate(prompt, preset) {
   let cursorInjected = false
 
   try {
-    const stream = await api.generateNotes(currentFile, prompt, preset)
+    const stream = await api.generateNotes(currentFile, prompt, preset, currentLinkUrl)
 
     await readSSE(stream, (chunk) => {
       if (chunk.error) {
@@ -184,7 +202,7 @@ async function onGenerate(prompt, preset) {
         const savedNote = api.saveNote({
           title: chunk.title,
           content: rawAccumulated,
-          source_file: currentFile ? currentFile.name : null,
+          source_file: sourceLabel,
           prompt: prompt || null,
           preset: preset || null,
           segment_count: chunk.segment_count,

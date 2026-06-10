@@ -10,9 +10,10 @@ function writeNotes(notes) {
 
 // ── Network ───────────────────────────────────────────────────────────────────
 
-export async function generateNotes(file, prompt, preset) {
+export async function generateNotes(file, prompt, preset, link) {
   const form = new FormData()
   if (file) form.append('file', file)
+  if (link) form.append('link', link)
   if (prompt) form.append('prompt', prompt)
   if (preset) form.append('preset', preset)
 

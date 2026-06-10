@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { GoogleGenAI } from '@google/genai'
 import { buildPrompt } from './prompts.js'
 
 const MODEL = 'gemini-2.5-flash'
@@ -65,5 +66,70 @@ export async function* generateNotes(structuredContent, prompt, preset, apiKey) 
     }
   } finally {
     reader.releaseLock()
+  }
+}
+
+export async function* generateNotesFromMedia(mediaBuffer, mimeType, prompt, preset, apiKey) {
+  const clientKey = apiKey || process.env.GEMINI_API_KEY
+  if (!clientKey) {
+    throw new Error('Gemini API Key is missing. Please configure it in the settings panel (⚙) or add GEMINI_API_KEY to your environment variables.')
+  }
+
+  const systemInstruction = buildPrompt(preset, prompt)
+  const ai = new GoogleGenAI({ apiKey: clientKey })
+  const instruction = mimeType.startsWith('video/')
+    ? 'Watch this video, then turn it into study notes following the instructions.'
+    : 'Transcribe this class recording, then turn it into study notes following the instructions.'
+
+  let stream
+  try {
+    stream = await ai.models.generateContentStream({
+      model: MODEL,
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: instruction },
+          { inlineData: { mimeType, data: mediaBuffer.toString('base64') } },
+        ],
+      }],
+      config: { systemInstruction },
+    })
+  } catch (err) {
+    throw new Error(`Gemini API error: ${err.message}`)
+  }
+
+  for await (const chunk of stream) {
+    if (chunk.text) yield chunk.text
+  }
+}
+
+export async function* generateNotesFromVideoUrl(videoUrl, prompt, preset, apiKey) {
+  const clientKey = apiKey || process.env.GEMINI_API_KEY
+  if (!clientKey) {
+    throw new Error('Gemini API Key is missing. Please configure it in the settings panel (⚙) or add GEMINI_API_KEY to your environment variables.')
+  }
+
+  const systemInstruction = buildPrompt(preset, prompt)
+  const ai = new GoogleGenAI({ apiKey: clientKey })
+
+  let stream
+  try {
+    stream = await ai.models.generateContentStream({
+      model: MODEL,
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: 'Watch this video, then turn it into study notes following the instructions.' },
+          { fileData: { fileUri: videoUrl } },
+        ],
+      }],
+      config: { systemInstruction },
+    })
+  } catch (err) {
+    throw new Error(`Gemini API error: ${err.message}`)
+  }
+
+  for await (const chunk of stream) {
+    if (chunk.text) yield chunk.text
   }
 }
