@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Primary SEO -->
+  <title>NoteBot AI — AI-Powered Notes from Class Recordings</title>
+  <meta name="description" content="Transform your class recordings, transcripts, and lecture notes into beautiful, structured study notes using Google Gemini AI. Supports flashcards, summaries, key concepts, and more." />
+  <meta name="keywords" content="AI notes, class notes, lecture notes, study notes, AI note generator, Gemini AI, flashcards, study guide, note taking app" />
+  <meta name="author" content="NoteBot AI" />
+  <meta name="robots" content="index, follow" />
+
+  <!-- Open Graph (Facebook, WhatsApp, Slack previews) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://ai-notebot.vercel.app/" />
+  <meta property="og:title" content="NoteBot AI — AI-Powered Notes from Class Recordings" />
+  <meta property="og:description" content="Upload your class transcript or recording and let Google Gemini generate structured study notes, flashcards, summaries, and more in seconds." />
+  <meta property="og:image" content="https://ai-notebot.vercel.app/og-image.png" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://ai-notebot.vercel.app/" />
+  <meta name="twitter:title" content="NoteBot AI — AI-Powered Notes from Class Recordings" />
+  <meta name="twitter:description" content="Upload your class transcript or recording and let Google Gemini generate structured study notes, flashcards, summaries, and more in seconds." />
+  <meta name="twitter:image" content="https://ai-notebot.vercel.app/og-image.png" />
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://ai-notebot.vercel.app/" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" />
+  <link rel="stylesheet" href="css/index.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Static pre-render for crawlers/scrapers. Replaced by JS at runtime. -->
+    <main style="max-width:800px;margin:0 auto;padding:40px 24px;font-family:Inter,sans-serif;color:#eaeaea;background:#111827;min-height:100vh;">
+      <header style="margin-bottom:40px;">
+        <h1 style="font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#7c5cfc,#2dd4bf);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:12px;">✦ NoteBot AI</h1>
+        <p style="font-size:1.1rem;color:#94a3b8;line-height:1.6;">Transform your class recordings, transcripts, and lecture notes into beautiful, structured study notes using Google Gemini AI — in seconds.</p>
+      </header>
+
+      <section style="margin-bottom:36px;">
+        <h2 style="font-size:1.3rem;font-weight:600;color:#e2e8f0;margin-bottom:16px;">What is NoteBot AI?</h2>
+        <p style="color:#94a3b8;line-height:1.7;">NoteBot AI is a free AI-powered note-taking tool designed for students. Upload a class transcript or lecture resource file and choose a note style — the app uses Google Gemini to instantly generate comprehensive, well-formatted study material tailored to your needs.</p>
+      </section>
+
+      <section style="margin-bottom:36px;">
+        <h2 style="font-size:1.3rem;font-weight:600;color:#e2e8f0;margin-bottom:16px;">Features</h2>
+        <ul style="color:#94a3b8;line-height:2;padding-left:20px;">
+          <li>📄 Upload class transcripts (JSON, TXT, or Markdown)</li>
+          <li>✨ Six note presets: Detailed Notes, Summary, Key Concepts, Flashcards, Study Guide, Formula Sheet</li>
+          <li>⚡ Live streaming — watch notes generate in real time</li>
+          <li>📐 LaTeX math rendering for science and engineering subjects</li>
+          <li>💻 Syntax-highlighted code blocks</li>
+          <li>💾 Notes saved locally in your browser — no account needed</li>
+          <li>📤 Export as Markdown or plain text</li>
+          <li>🔍 Search and revisit all your saved notes</li>
+        </ul>
+      </section>
+
+      <section style="margin-bottom:36px;">
+        <h2 style="font-size:1.3rem;font-weight:600;color:#e2e8f0;margin-bottom:16px;">How to Use</h2>
+        <ol style="color:#94a3b8;line-height:2;padding-left:20px;">
+          <li>Upload your class resource file (drag and drop or click to browse)</li>
+          <li>Select a note style preset (Notes, Flashcards, Summary, etc.)</li>
+          <li>Optionally add custom instructions</li>
+          <li>Click <strong style="color:#e2e8f0;">Generate Notes</strong> and watch them stream in live</li>
+          <li>Copy, export, or search your saved notes from the sidebar</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2 style="font-size:1.3rem;font-weight:600;color:#e2e8f0;margin-bottom:16px;">Supported Subjects</h2>
+        <p style="color:#94a3b8;line-height:1.7;">Mathematics, Physics, Chemistry, Biology, Computer Science, History, Economics, Literature, Engineering, and any other subject covered in your class recordings.</p>
+      </section>
+    </main>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <h2 class="settings-title" id="settings-title">⚙ Settings</h2>
+        <button id="settings-close" class="settings-close" aria-label="Close settings">×</button>
+      </div>
+      <div class="settings-card-body">
+        <label class="settings-label" for="settings-api-key">Gemini API Key</label>
+        <p class="settings-hint">
+          Override the server default with your own key. Stored only in this browser — never sent to any third party.
+        </p>
+        <div class="settings-input-row">
+          <input
+            type="password"
+            id="settings-api-key"
+            class="settings-input"
+            placeholder="AQ.xxxxxxxxxxxxxxxxxxxx"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="settings-toggle" class="settings-toggle" type="button" aria-label="Show / hide key">Show</button>
+        </div>
+        <p class="settings-clear-hint" id="settings-status"></p>
+      </div>
+      <div class="settings-card-footer">
+        <button id="settings-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="settings-save" class="btn btn-primary">Save Key</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
