@@ -34,7 +34,7 @@ export function render() {
       <div class="sidebar-header">
         <button class="sidebar-logo" id="sidebar-logo" title="Back to upload">
           ${MASCOT_SVG}
-          <span class="sidebar-title">STUDY FETCH</span>
+          <span class="sidebar-title">VED NOTES</span>
         </button>
         <button id="btn-settings" class="btn-settings" title="Settings" aria-label="Open settings">⚙</button>
       </div>
