@@ -3,6 +3,7 @@ import multer from 'multer'
 import { parseClassResource } from '../services/parser.js'
 import { generateNotes, generateNotesFromMedia, generateNotesFromVideoUrl } from '../services/llm.js'
 import { fetchLinkContent } from '../services/linkFetcher.js'
+import { extractPptxText } from '../services/pptxParser.js'
 
 const router = Router()
 const upload = multer({
@@ -24,6 +25,18 @@ const VIDEO_MIME_MAP = {
   'video/x-matroska': 'video/webm',
 }
 const VIDEO_EXT_MAP = { mp4: 'video/mp4', mov: 'video/mov', webm: 'video/webm', avi: 'video/avi', wmv: 'video/wmv', '3gp': 'video/3gpp', mpeg: 'video/mpeg', mpg: 'video/mpg' }
+
+const PDF_MIME = 'application/pdf'
+const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+const PPT_MIME = 'application/vnd.ms-powerpoint'
+
+function isPptx(file) {
+  return file.mimetype === PPTX_MIME || /\.pptx$/i.test(file.originalname)
+}
+
+function isLegacyPpt(file) {
+  return file.mimetype === PPT_MIME || /\.ppt$/i.test(file.originalname)
+}
 
 function normalizeAudioMime(mimetype, filename) {
   if (mimetype && AUDIO_MIME_MAP[mimetype]) return AUDIO_MIME_MAP[mimetype]
@@ -83,6 +96,15 @@ router.post('/generate', uploadSingle, async (req, res) => {
       const mimeType = normalizeVideoMime(req.file.mimetype, req.file.originalname)
       metadata.topic = 'Video'
       stream = generateNotesFromMedia(req.file.buffer, mimeType, prompt, preset, apiKey)
+    } else if (req.file && req.file.mimetype === PDF_MIME) {
+      metadata.topic = 'PDF Document'
+      stream = generateNotesFromMedia(req.file.buffer, PDF_MIME, prompt, preset, apiKey)
+    } else if (req.file && isPptx(req.file)) {
+      structuredContent = await extractPptxText(req.file.buffer)
+      metadata.topic = 'PowerPoint Presentation'
+      stream = generateNotes(structuredContent, prompt, preset, apiKey)
+    } else if (req.file && isLegacyPpt(req.file)) {
+      throw new Error('Legacy .ppt files are not supported — please save as .pptx and try again.')
     } else if (req.file) {
       const fileContent = req.file.buffer.toString('utf-8')
       ;({ structuredContent, metadata } = parseClassResource(fileContent))

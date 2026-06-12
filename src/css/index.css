@@ -974,9 +974,13 @@ body {
   align-items: center;
   gap: 8px;
   margin-top: 20px;
-  padding-top: 16px;
+  padding: 16px 0;
   border-top: 1px solid var(--border-subtle);
   flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-primary);
+  z-index: 10;
 }
 
 .btn-toolbar {

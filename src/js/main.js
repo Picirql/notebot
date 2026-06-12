@@ -150,6 +150,17 @@ function onCapturedInput(kind, data) {
     return
   }
 
+  if (kind === 'document') {
+    currentLinkUrl = null
+    currentFile = data
+    currentFileContent = null
+    currentMetadata = { segmentCount: 0, duration: 'N/A', topic: 'Document', isPlainText: true }
+    fileUpload.updateUploadInfo(data.name, currentMetadata)
+    promptInput.setEnabled(true)
+    setView('workspace')
+    return
+  }
+
   // 'text'
   const mockFile = new File([data], 'input.txt', { type: 'text/plain' })
   onFileLoaded(mockFile, data)

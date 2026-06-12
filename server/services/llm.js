@@ -77,9 +77,14 @@ export async function* generateNotesFromMedia(mediaBuffer, mimeType, prompt, pre
 
   const systemInstruction = buildPrompt(preset, prompt)
   const ai = new GoogleGenAI({ apiKey: clientKey })
-  const instruction = mimeType.startsWith('video/')
-    ? 'Watch this video, then turn it into study notes following the instructions.'
-    : 'Transcribe this class recording, then turn it into study notes following the instructions.'
+  let instruction
+  if (mimeType.startsWith('video/')) {
+    instruction = 'Watch this video, then turn it into study notes following the instructions.'
+  } else if (mimeType === 'application/pdf') {
+    instruction = 'Read this document, then turn it into study notes following the instructions.'
+  } else {
+    instruction = 'Transcribe this class recording, then turn it into study notes following the instructions.'
+  }
 
   let stream
   try {
