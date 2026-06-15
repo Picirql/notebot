@@ -268,6 +268,7 @@ body {
 .main-content {
   padding: 32px;
   overflow-y: auto;
+  scroll-behavior: smooth;
 }
 
 .main-inner {

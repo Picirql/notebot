@@ -3,6 +3,21 @@ import katex from 'katex'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github-dark.css'
 
+let slugCounts = {}
+
+function slugify(text) {
+  const base = text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'section'
+
+  const count = slugCounts[base] || 0
+  slugCounts[base] = count + 1
+  return count === 0 ? base : `${base}-${count}`
+}
+
 marked.use({
   breaks: true,
   gfm: true,
@@ -13,12 +28,17 @@ marked.use({
       const highlighted = hljs.highlight(String(code), { language: lang, ignoreIllegals: true }).value
       return `<pre><code class="hljs language-${lang}">${highlighted}</code></pre>`
     },
+    // marked v12 passes (text, level, raw) — `raw` is the plain heading text
+    heading(text, level, raw) {
+      return `<h${level} id="${slugify(raw)}">${text}</h${level}>\n`
+    },
   },
 })
 
 export function renderMarkdown(text) {
   if (!text) return ''
 
+  slugCounts = {}
   const mathBlocks = []
 
   // Extract $$...$$ display math before marked touches it

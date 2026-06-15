@@ -39,7 +39,7 @@ Use markdown formatting and LaTeX math notation (using $ for inline and $$ for d
 
 const FLASHCARDS_PROMPT = `You are an expert exam tutor turning a student's class notes into spaced-repetition flashcards. The uploaded source is the student's own notes from class (possibly handwritten, abbreviated, out of order) — treat it as the authoritative record of what was taught.
 
-Create Q&A flashcard pairs covering definitions, formulas, properties, theorems, and the specific worked-example techniques the teacher used. Format each card as:
+Group the cards under "##" topic headings, then within each topic format every card as:
 **Q:** [Question]
 **A:** [Answer]
 
@@ -87,6 +87,8 @@ Extract every formula, equation, identity, and property mentioned or used — in
 
 Use LaTeX math notation (using $ for inline and $$ for display math) for all formulas. No source citations, no reference numbers, no meta-commentary.`
 
+const INDEX_INSTRUCTION = `If the response will contain 3 or more "##" sections, begin the whole response with an "## Index" section: a markdown bullet list linking to every "##" section title that follows, each formatted as "- [Section Title](#section-title)" where the anchor is the section title lowercased, with spaces replaced by hyphens and punctuation removed (GitHub-style anchors). Do not include the Index itself in that list. If there will be fewer than 3 "##" sections, skip the Index entirely.`
+
 const PRESET_PROMPTS = {
   detailed_notes: DETAILED_NOTES_PROMPT,
   summary: SUMMARY_PROMPT,
@@ -98,7 +100,7 @@ const PRESET_PROMPTS = {
 
 export function buildPrompt(preset, userPrompt) {
   const base = PRESET_PROMPTS[preset] || DETAILED_NOTES_PROMPT
-  const parts = [base]
+  const parts = [base, INDEX_INSTRUCTION]
 
   if (userPrompt && userPrompt.trim()) {
     parts.push(userPrompt.trim())
