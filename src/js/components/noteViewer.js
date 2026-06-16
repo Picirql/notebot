@@ -122,18 +122,8 @@ export function init() {
     if (!el || !el.innerHTML.trim()) { showToast('Nothing to export', 'error'); return }
     showToast('Generating PDF…', 'success')
     try {
-      const { default: html2pdf } = await import('html2pdf.js')
-      await html2pdf()
-        .set({
-          margin: 10,
-          filename: 'notes.pdf',
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-        })
-        .from(el)
-        .save()
+      const { exportNotesToPdf } = await import('../services/pdfExport.js')
+      await exportNotesToPdf(el, 'notes.pdf')
       showToast('Exported as notes.pdf', 'success')
     } catch (err) {
       showToast(`PDF export failed: ${err.message}`, 'error')
