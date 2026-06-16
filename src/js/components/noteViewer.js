@@ -86,7 +86,17 @@ export function init() {
   document.getElementById('note-content')?.addEventListener('click', (e) => {
     const link = e.target.closest('a[href^="#"]')
     if (!link) return
-    const target = document.getElementById(decodeURIComponent(link.getAttribute('href').slice(1)))
+    // Decode then re-normalize to match how markdown.js assigns heading IDs:
+    // the AI sometimes URL-encodes special chars (e.g. ² → %C2%B2) instead of
+    // stripping them, so decoding alone produces an ID that doesn't exist.
+    const decoded = decodeURIComponent(link.getAttribute('href').slice(1))
+    const normalized = decoded
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'section'
+    const target = document.getElementById(normalized)
     if (!target) return
     e.preventDefault()
     target.scrollIntoView({ behavior: 'smooth', block: 'start' })

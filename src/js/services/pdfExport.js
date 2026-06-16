@@ -1,20 +1,9 @@
-// Renders #note-content to a PDF and adds a clickable bookmarks/outline panel
-// (one entry per "##" section) so readers can jump straight to a section.
-// Page numbers are estimated from each heading's vertical position relative
-// to the page height — close, but not pixel-exact, since html2canvas/jsPDF
-// don't expose per-element page placement directly.
 export async function exportNotesToPdf(contentEl, filename) {
   const { default: html2pdf } = await import('html2pdf.js')
 
-  const clone = contentEl.cloneNode(true)
-  // Strip in-app anchor links — a PDF page-jump isn't possible via these,
-  // and leaving them in turns them into links back to the web app.
-  clone.querySelectorAll('a[href^="#"]').forEach((a) => a.removeAttribute('href'))
-  clone.style.position = 'fixed'
-  clone.style.top = '-10000px'
-  clone.style.left = '0'
-  clone.style.width = `${contentEl.offsetWidth}px`
-  document.body.appendChild(clone)
+  const anchors = [...contentEl.querySelectorAll('a[href^="#"]')]
+  const savedHrefs = anchors.map(a => a.getAttribute('href'))
+  anchors.forEach(a => a.removeAttribute('href'))
 
   try {
     const worker = html2pdf().set({
@@ -24,21 +13,25 @@ export async function exportNotesToPdf(contentEl, filename) {
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
       pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-    }).from(clone)
+    }).from(contentEl)
 
     const pdf = await worker.toPdf().get('pdf')
-    const pageSize = await worker.get('pageSize')
 
-    const cloneRect = clone.getBoundingClientRect()
-    clone.querySelectorAll('h2[id]').forEach((heading) => {
-      const offsetTop = heading.getBoundingClientRect().top - cloneRect.top
-      const mmY = (offsetTop * pageSize.inner.width) / cloneRect.width
-      const pageNumber = Math.max(1, Math.floor(mmY / pageSize.inner.height) + 1)
-      pdf.outline.add(null, heading.textContent.trim(), { pageNumber })
+    const pageW = pdf.internal.pageSize.getWidth()
+    const pageH = pdf.internal.pageSize.getHeight()
+    const innerW = pageW - 20
+    const innerH = pageH - 20
+    const contentRect = contentEl.getBoundingClientRect()
+
+    contentEl.querySelectorAll('h2[id]').forEach(h => {
+      const offsetTop = h.getBoundingClientRect().top - contentRect.top
+      const mmY = (offsetTop / contentRect.width) * innerW
+      const pageNumber = Math.max(1, Math.floor(mmY / innerH) + 1)
+      pdf.outline.add(null, h.textContent.trim(), { pageNumber })
     })
 
     pdf.save(filename)
   } finally {
-    clone.remove()
+    anchors.forEach((a, i) => a.setAttribute('href', savedHrefs[i]))
   }
 }
