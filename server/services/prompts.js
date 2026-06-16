@@ -98,9 +98,13 @@ const PRESET_PROMPTS = {
   formula_sheet: FORMULA_SHEET_PROMPT,
 }
 
+const NO_INDEX_PRESETS = new Set(['flashcards'])
+
 export function buildPrompt(preset, userPrompt) {
   const base = PRESET_PROMPTS[preset] || DETAILED_NOTES_PROMPT
-  const parts = [base, INDEX_INSTRUCTION]
+  const parts = [base]
+
+  if (!NO_INDEX_PRESETS.has(preset)) parts.push(INDEX_INSTRUCTION)
 
   if (userPrompt && userPrompt.trim()) {
     parts.push(userPrompt.trim())

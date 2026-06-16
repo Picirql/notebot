@@ -184,6 +184,8 @@ async function onGenerate(prompt, preset) {
 
   let rawAccumulated = ''
   let cursorInjected = false
+  let lastRender = 0
+  const RENDER_INTERVAL = 150 // ms — throttle re-renders so large docs don't freeze the tab
 
   try {
     const stream = await api.generateNotes(currentFile, prompt, preset, currentLinkUrl)
@@ -196,20 +198,26 @@ async function onGenerate(prompt, preset) {
 
       if (chunk.text) {
         rawAccumulated += chunk.text
-        noteViewer.setContent(renderMarkdown(rawAccumulated))
-
-        if (!cursorInjected) {
-          const el = document.getElementById('note-content')
-          if (el) {
-            const cursor = document.createElement('span')
-            cursor.className = 'streaming-cursor'
-            el.appendChild(cursor)
+        const now = Date.now()
+        if (now - lastRender >= RENDER_INTERVAL) {
+          lastRender = now
+          noteViewer.setContent(renderMarkdown(rawAccumulated))
+          if (!cursorInjected) {
+            const el = document.getElementById('note-content')
+            if (el) {
+              const cursor = document.createElement('span')
+              cursor.className = 'streaming-cursor'
+              el.appendChild(cursor)
+            }
+            cursorInjected = true
           }
-          cursorInjected = true
         }
       }
 
       if (chunk.done) {
+        // Final render with complete markdown before saving/exporting.
+        noteViewer.setContent(renderMarkdown(rawAccumulated))
+
         const savedNote = api.saveNote({
           title: chunk.title,
           content: rawAccumulated,
@@ -225,10 +233,17 @@ async function onGenerate(prompt, preset) {
         noteViewer.finishStreaming()
         setSaveBtn('saved')
         sidebar.setActive(savedNote.id)
-
         sidebar.loadNotes(api.fetchNotes())
         sidebar.setActive(savedNote.id)
         showToast(`Notes saved locally: "${savedNote.title}"`, 'success')
+
+        // Auto-export PDF after generation completes.
+        const noteEl = document.getElementById('note-content')
+        if (noteEl?.innerHTML.trim()) {
+          import('./services/pdfExport.js').then(({ exportNotesToPdf }) => {
+            exportNotesToPdf(noteEl, `${savedNote.title || 'notes'}.pdf`)
+          })
+        }
       }
     })
   } catch (err) {

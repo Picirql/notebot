@@ -9,10 +9,12 @@ export async function exportNotesToPdf(contentEl, filename) {
     const worker = html2pdf().set({
       margin: 10,
       filename,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      image: { type: 'jpeg', quality: 0.95 },
+      // scale:1 keeps the canvas small enough for large documents;
+      // scale:2 would quarter the max page count before canvas overflow.
+      html2canvas: { scale: 1, useCORS: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      pagebreak: { mode: ['css', 'legacy'] },
     }).from(contentEl)
 
     const pdf = await worker.toPdf().get('pdf')

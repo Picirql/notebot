@@ -54,7 +54,7 @@ function normalizeVideoMime(mimetype, filename) {
 
 function extractTitle(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const heading = lines.find(l => l.startsWith('#'))
+  const heading = lines.find(l => l.startsWith('#') && l.replace(/^#+\s*/, '').trim().toLowerCase() !== 'index')
   const raw = heading ? heading.replace(/^#+\s*/, '') : (lines[0] ?? 'Untitled Note')
   return raw.slice(0, 60)
 }
