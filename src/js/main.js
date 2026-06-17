@@ -236,14 +236,6 @@ async function onGenerate(prompt, preset) {
         sidebar.loadNotes(api.fetchNotes())
         sidebar.setActive(savedNote.id)
         showToast(`Notes saved locally: "${savedNote.title}"`, 'success')
-
-        // Auto-export PDF after generation completes.
-        const noteEl = document.getElementById('note-content')
-        if (noteEl?.innerHTML.trim()) {
-          import('./services/pdfExport.js').then(({ exportNotesToPdf }) => {
-            exportNotesToPdf(noteEl, `${savedNote.title || 'notes'}.pdf`)
-          })
-        }
       }
     })
   } catch (err) {
