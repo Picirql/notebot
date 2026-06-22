@@ -108,6 +108,74 @@ export async function* generateNotesFromMedia(mediaBuffer, mimeType, prompt, pre
   }
 }
 
+// ── Chunking ──────────────────────────────────────────────────────────────────
+
+function splitLongSection(text) {
+  const lines = text.split('\n')
+  const chunks = []
+  let current = ''
+  let inCode = false
+  let inMath = false
+
+  for (const line of lines) {
+    if (line.trim().startsWith('```')) inCode = !inCode
+    const mathTicks = (line.match(/\$\$/g) ?? []).length
+    if (mathTicks % 2 !== 0) inMath = !inMath
+
+    current += line + '\n'
+
+    if (current.length >= 1000 && !inCode && !inMath) {
+      chunks.push(current.trim())
+      current = ''
+    }
+  }
+  if (current.trim()) chunks.push(current.trim())
+  return chunks
+}
+
+export function chunkMarkdown(text) {
+  const sections = text.split(/^(?=##\s)/m).filter(s => s.trim())
+  const chunks = []
+  for (const section of sections) {
+    if (section.length <= 1000) {
+      chunks.push(section.trim())
+    } else {
+      chunks.push(...splitLongSection(section))
+    }
+  }
+  return chunks.filter(Boolean)
+}
+
+// ── Metadata tagging ──────────────────────────────────────────────────────────
+
+const TAG_SYSTEM = `Analyze the provided note chunk. Output a valid JSON object tagging the chunk with these fields:
+- subject: Subject area (e.g. "Mathematics", "Physics")
+- chapter_topic: Name of chapter/topic
+- type: Must be exactly one of: "theory", "formula", "worked example", "teacher-emphasis"
+- importance: boolean (true if marked "important", "frequent exam question", or similar, else false)
+Return ONLY a raw JSON object matching this schema. Do not enclose it in markdown blocks.`
+
+export async function extractChunkMetadata(chunkText, apiKey) {
+  const clientKey = apiKey || process.env.GEMINI_API_KEY
+  const defaultTags = { subject: '', chapter_topic: '', type: 'theory', importance: false }
+  if (!clientKey) return defaultTags
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: clientKey })
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [{ role: 'user', parts: [{ text: chunkText }] }],
+      config: { systemInstruction: TAG_SYSTEM },
+    })
+
+    const raw = (response.text ?? '').trim()
+    const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
+    return JSON.parse(cleaned)
+  } catch {
+    return defaultTags
+  }
+}
+
 export async function* generateNotesFromVideoUrl(videoUrl, prompt, preset, apiKey) {
   const clientKey = apiKey || process.env.GEMINI_API_KEY
   if (!clientKey) {

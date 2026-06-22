@@ -1,11 +1,18 @@
 import { showToast } from './toast.js'
-import { deleteNote } from '../services/api.js'
+import { fetchNotebooks } from '../services/api.js'
+import {
+  showCreateNotebookModal,
+  showRenameDialog,
+  showDescriptionModal,
+  showDeleteConfirm,
+} from './notebookModals.js'
 
-let _allNotes = []
-let _onNoteSelect = null
-let _onNoteDelete = null
+let _allNotebooks = []
+let _onNotebookSelect = null
 let _onHome = null
-let _debounceTimer = null
+let _searchTimer = null
+let _activeDropdown = null
+let _activeNotebookId = null
 
 // ── Inline icon assets ───────────────────────────────────────────────────────
 
@@ -26,146 +33,217 @@ const MASCOT_SVG = `
   </svg>
 `
 
-const DOC_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2h7l5 5v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5"/></svg>`
+// ── Render ────────────────────────────────────────────────────────────────────
 
 export function render() {
   return `
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <button class="sidebar-logo" id="sidebar-logo" title="Back to upload">
+        <button class="sidebar-logo" id="sidebar-logo" title="Back to home">
           ${MASCOT_SVG}
           <span class="sidebar-title">VED NOTES</span>
         </button>
         <button id="btn-settings" class="btn-settings" title="Settings" aria-label="Open settings">⚙</button>
       </div>
 
-      <div class="sidebar-search">
-        <input type="text" id="sidebar-search-input" placeholder="Search notes..." autocomplete="off" />
+      <div class="sidebar-notebooks-header" id="sidebar-notebooks-header">
+        <span class="sidebar-notebooks-label">My Notebooks</span>
+        <button class="btn-add-notebook" id="btn-add-notebook" title="New notebook" aria-label="Create new notebook">+</button>
       </div>
 
-      <div class="sidebar-notes-header">Your Notes</div>
-      <div class="sidebar-list" id="sidebar-list">
-        <div class="sidebar-empty">
-          <div class="sidebar-empty-icon">📋</div>
-          <div>No saved notes yet</div>
+      <div class="sidebar-notebooks-wrapper collapsed" id="sidebar-notebooks-wrapper">
+        <div class="sidebar-notebooks-search">
+          <input type="text" id="notebook-search-input" placeholder="Search notebooks..." autocomplete="off" />
         </div>
+        <div class="sidebar-notebooks-list" id="sidebar-notebooks-list"></div>
       </div>
     </aside>
   `
 }
 
-export function loadNotes(notes) {
-  _allNotes = notes ?? []
-  renderNoteList(_allNotes)
-}
+// ── Public API ────────────────────────────────────────────────────────────────
 
-export function setActive(noteId) {
-  document.querySelectorAll('.note-item').forEach(item => {
-    item.classList.toggle('active', Number(item.dataset.id) === Number(noteId))
-  })
-}
-
-export function prependNote(note) {
-  _allNotes.unshift(note)
-  renderNoteList(_allNotes)
-}
-
-export function init(onNoteSelect, onNoteDelete, onHome) {
-  _onNoteSelect = onNoteSelect
-  _onNoteDelete = onNoteDelete
+export function init(onNotebookSelect, _unusedNoteDelete, onHome) {
+  _onNotebookSelect = onNotebookSelect
   _onHome = onHome
 
-  // Logo routes the main panel back to the upload page
   document.getElementById('sidebar-logo')?.addEventListener('click', () => {
-    setActive(null)
+    _activeNotebookId = null
     _onHome?.()
   })
 
-  const search = document.getElementById('sidebar-search-input')
-  search?.addEventListener('input', () => {
-    clearTimeout(_debounceTimer)
-    _debounceTimer = setTimeout(() => {
-      const q = search.value.trim().toLowerCase()
-      if (!q) {
-        renderNoteList(_allNotes)
-      } else {
-        renderNoteList(_allNotes.filter(n =>
-          n.title.toLowerCase().includes(q) || (n.preview ?? '').toLowerCase().includes(q)
-        ))
-      }
-    }, 300)
+  // Clicking the header (but not the + button) toggles the list
+  document.getElementById('sidebar-notebooks-header')?.addEventListener('click', () => {
+    const wrapper = document.getElementById('sidebar-notebooks-wrapper')
+    const header  = document.getElementById('sidebar-notebooks-header')
+    wrapper?.classList.toggle('collapsed')
+    header?.classList.toggle('expanded', !wrapper?.classList.contains('collapsed'))
+  })
+
+  // + button opens Create Notebook modal — stop propagation so header toggle doesn't fire
+  document.getElementById('btn-add-notebook')?.addEventListener('click', (e) => {
+    e.stopPropagation()
+    showCreateNotebookModal((notebook) => {
+      _allNotebooks.unshift(notebook)
+      renderNotebookList(_allNotebooks)
+      // Auto-expand the list after creation
+      document.getElementById('sidebar-notebooks-wrapper')?.classList.remove('collapsed')
+      document.getElementById('sidebar-notebooks-header')?.classList.add('expanded')
+    })
+  })
+
+  // Notebook search with debounce
+  const searchInput = document.getElementById('notebook-search-input')
+  searchInput?.addEventListener('input', () => {
+    clearTimeout(_searchTimer)
+    _searchTimer = setTimeout(() => {
+      const q = searchInput.value.trim().toLowerCase()
+      renderNotebookList(
+        q
+          ? _allNotebooks.filter(nb =>
+              nb.name.toLowerCase().includes(q) ||
+              (nb.description ?? '').toLowerCase().includes(q)
+            )
+          : _allNotebooks
+      )
+    }, 200)
+  })
+
+  // Close open dropdown when clicking anywhere outside
+  document.addEventListener('click', () => closeActiveDropdown())
+
+  // Initial render
+  loadNotebooks()
+}
+
+export function loadNotebooks(notebooks) {
+  _allNotebooks = notebooks ?? fetchNotebooks()
+  renderNotebookList(_allNotebooks)
+}
+
+export function setActiveNotebook(id) {
+  _activeNotebookId = id
+  document.querySelectorAll('.notebook-item').forEach(item => {
+    item.classList.toggle('active', Number(item.dataset.id) === Number(id))
   })
 }
 
+export function refreshNotebooks() {
+  _allNotebooks = fetchNotebooks()
+  renderNotebookList(_allNotebooks)
+}
+
+// Legacy stubs — main.js still calls these; will be removed when main.js is migrated
+export function loadNotes() {}
+export function setActive() {}
+export function prependNote() {}
+
 // ── Internal rendering ───────────────────────────────────────────────────────
 
-function renderNoteList(notes) {
-  const list = document.getElementById('sidebar-list')
+function renderNotebookList(notebooks) {
+  const list = document.getElementById('sidebar-notebooks-list')
   if (!list) return
 
-  if (!notes.length) {
+  if (!notebooks.length) {
     list.innerHTML = `
       <div class="sidebar-empty">
-        <div class="sidebar-empty-icon">📋</div>
-        <div>No saved notes yet</div>
+        <div class="sidebar-empty-icon">📓</div>
+        <div>No notebooks yet</div>
       </div>
     `
     return
   }
 
-  list.innerHTML = notes.map(note => `
-    <div class="note-item" data-id="${note.id}" style="position:relative">
-      <div class="note-item-title"><span class="note-item-icon">${DOC_ICON}</span>${escHtml(note.title)}</div>
-      <div class="note-item-meta">
-        <span>${fmtDate(note.created_at)}</span>
-        ${note.preset ? `<span class="preset-badge">${note.preset.replace(/_/g, ' ')}</span>` : ''}
+  list.innerHTML = notebooks.map(nb => `
+    <div class="notebook-item${_activeNotebookId === nb.id ? ' active' : ''}" data-id="${nb.id}">
+      <div class="notebook-item-info">
+        <div class="notebook-item-name">
+          ${escHtml(nb.name)}
+          ${nb.notes.length > 0 ? `<span class="notebook-count-badge">${nb.notes.length}</span>` : ''}
+        </div>
+        <div class="notebook-item-date">${fmtDate(nb.created_at)}</div>
       </div>
-      <div class="note-item-preview">${escHtml(note.preview ?? '')}</div>
-      <button
-        class="note-delete-btn"
-        data-id="${note.id}"
-        title="Delete note"
-        style="
-          position:absolute; top:10px; right:10px;
-          background:none; border:none; cursor:pointer;
-          color:var(--text-muted); font-size:1rem; line-height:1;
-          opacity:0; transition:opacity var(--transition-fast);
-          padding:2px 6px; border-radius:4px;
-        "
-      >×</button>
+      <div class="notebook-item-actions">
+        <button
+          class="notebook-menu-btn"
+          id="notebook-menu-${nb.id}"
+          data-id="${nb.id}"
+          title="More options"
+          aria-label="Notebook options"
+        >⋯</button>
+        <div class="notebook-dropdown hidden" id="notebook-dropdown-${nb.id}">
+          <button class="notebook-dropdown-item" data-action="rename"      data-id="${nb.id}">Rename Notebook</button>
+          <button class="notebook-dropdown-item" data-action="delete"      data-id="${nb.id}">Delete Notebook</button>
+          <button class="notebook-dropdown-item" data-action="description" data-id="${nb.id}">View/Change Description</button>
+        </div>
+      </div>
     </div>
   `).join('')
 
-  // Show/hide delete button on hover
-  list.querySelectorAll('.note-item').forEach(item => {
-    const delBtn = item.querySelector('.note-delete-btn')
-    item.addEventListener('mouseenter', () => { if (delBtn) delBtn.style.opacity = '1' })
-    item.addEventListener('mouseleave', () => { if (delBtn) delBtn.style.opacity = '0' })
-
+  // Notebook row click → select
+  list.querySelectorAll('.notebook-item').forEach(item => {
     item.addEventListener('click', (e) => {
-      if (delBtn?.contains(e.target)) return
+      if (e.target.closest('.notebook-item-actions')) return
       const id = Number(item.dataset.id)
-      setActive(id)
-      _onNoteSelect?.(id)
+      setActiveNotebook(id)
+      _onNotebookSelect?.(id)
     })
   })
 
-  list.querySelectorAll('.note-delete-btn').forEach(btn => {
+  // 3-dots button → toggle dropdown
+  list.querySelectorAll('.notebook-menu-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation()
-      if (!confirm('Delete this note?')) return
       const id = Number(btn.dataset.id)
-      try {
-        deleteNote(id)
-        _allNotes = _allNotes.filter(n => n.id !== id)
-        renderNoteList(_allNotes)
-        showToast('Note deleted', 'success')
-        _onNoteDelete?.(id)
-      } catch (err) {
-        showToast(`Failed to delete: ${err.message}`, 'error')
+      const dropdown = document.getElementById(`notebook-dropdown-${id}`)
+      if (!dropdown) return
+      const isOpen = !dropdown.classList.contains('hidden')
+      closeActiveDropdown()
+      if (!isOpen) {
+        dropdown.classList.remove('hidden')
+        _activeDropdown = dropdown
       }
     })
   })
+
+  // Dropdown action items
+  list.querySelectorAll('.notebook-dropdown-item').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const action = btn.dataset.action
+      const id = Number(btn.dataset.id)
+      const notebook = _allNotebooks.find(nb => nb.id === id)
+      closeActiveDropdown()
+      if (!notebook) return
+
+      if (action === 'rename') {
+        showRenameDialog(notebook, (updated) => {
+          Object.assign(notebook, updated)
+          renderNotebookList(_allNotebooks)
+        })
+      } else if (action === 'delete') {
+        showDeleteConfirm(notebook, (deletedId) => {
+          _allNotebooks = _allNotebooks.filter(nb => nb.id !== deletedId)
+          renderNotebookList(_allNotebooks)
+          if (_activeNotebookId === deletedId) {
+            _activeNotebookId = null
+            _onHome?.()
+          }
+        })
+      } else if (action === 'description') {
+        showDescriptionModal(notebook, (updated) => {
+          Object.assign(notebook, updated)
+        })
+      }
+    })
+  })
+}
+
+function closeActiveDropdown() {
+  if (_activeDropdown) {
+    _activeDropdown.classList.add('hidden')
+    _activeDropdown = null
+  }
 }
 
 function fmtDate(str) {
@@ -173,7 +251,7 @@ function fmtDate(str) {
 }
 
 function escHtml(str) {
-  return String(str)
+  return String(str ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }

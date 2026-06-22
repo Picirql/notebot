@@ -17,7 +17,7 @@ export function render() {
         <div class="note-content" id="note-content"></div>
       </div>
       <div class="action-bar">
-        <button class="btn btn-primary" id="btn-save">💾 Save</button>
+        <span class="note-save-status hidden" id="note-save-status"></span>
         <button class="btn-toolbar" id="btn-copy">📋 Copy</button>
         <button class="btn-toolbar" id="btn-export-md">⬇ Export MD</button>
         <button class="btn-toolbar" id="btn-export-txt">⬇ Export TXT</button>
@@ -80,6 +80,17 @@ export function setRawContent(md) {
 
 export function getRawContent() {
   return _rawMarkdown
+}
+
+export function setSaveStatus(text) {
+  const el = document.getElementById('note-save-status')
+  if (!el) return
+  if (text) {
+    el.textContent = text
+    el.classList.remove('hidden')
+  } else {
+    el.classList.add('hidden')
+  }
 }
 
 export function init() {

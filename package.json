@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
+    "@pinecone-database/pinecone": "^8.0.0",
     "cors": "^2.8.5",
     "docx": "^9.7.1",
     "dotenv": "^16.0.0",

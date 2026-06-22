@@ -5,6 +5,12 @@ import * as sidebar from './components/sidebar.js'
 import { showToast } from './components/toast.js'
 import * as api from './services/api.js'
 import { renderMarkdown } from './services/markdown.js'
+import {
+  showRenameNoteModal,
+  showDeleteNoteConfirm,
+  showMoveNoteModal,
+  showCopyNoteModal,
+} from './components/noteModals.js'
 
 // ── App state ────────────────────────────────────────────────────────────────
 let currentFile = null
@@ -12,21 +18,78 @@ let currentFileContent = null
 let currentLinkUrl = null
 let currentMetadata = null
 let currentNoteId = null
-let currentView = 'landing' // 'landing' | 'workspace'
+let currentNotebookId = null
+let currentTab = 'generate'
+let _activeExportDropdown = null
+let _activeNoteDropdown = null
+const _notebookTabs = {} // notebookId → last active tab
 
 // ── Render layout ────────────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = `
   <div class="app-layout">
     ${sidebar.render()}
-    <main class="main-content">
+    <main class="main-content" id="main-content">
       <div class="main-inner">
-        <div id="view-landing">
-          ${fileUpload.render()}
+
+        <!-- 4.1 Blank state -->
+        <div id="view-blank" class="view-blank-container">
+          <div class="blank-state">
+            <div class="blank-state-icon">📓</div>
+            <h2 class="blank-state-title">Your study space awaits</h2>
+            <p class="blank-state-desc">
+              Select a notebook from the sidebar or click
+              <strong>+</strong> to create one and start generating study notes.
+            </p>
+          </div>
         </div>
-        <div id="view-workspace" class="hidden">
-          ${promptInput.render()}
-          ${noteViewer.render()}
+
+        <!-- Notebook workspace -->
+        <div id="view-notebook" class="view-notebook-container hidden">
+
+          <!-- Active notebook context bar -->
+          <div class="workspace-notebook-header" id="workspace-notebook-header">
+            <span class="workspace-notebook-name" id="workspace-notebook-name"></span>
+            <span class="workspace-notebook-count" id="workspace-notebook-count"></span>
+          </div>
+
+          <!-- 4.2 Tab header -->
+          <div class="workspace-tabs-header" id="workspace-tabs-header">
+            <button class="workspace-tab-btn active" data-tab="generate">Generate Notes</button>
+            <button class="workspace-tab-btn" data-tab="store">Store Notes</button>
+            <button class="workspace-tab-btn" data-tab="chat">Chat</button>
+          </div>
+
+          <!-- 4.3 Generate Notes tab -->
+          <div class="workspace-tab-panel" id="tab-generate">
+            ${fileUpload.render()}
+            ${promptInput.render()}
+            ${noteViewer.render()}
+          </div>
+
+          <!-- 4.4 Store Notes tab -->
+          <div class="workspace-tab-panel hidden" id="tab-store">
+            <div id="store-notes-list"></div>
+            <div id="store-note-reader" class="hidden">
+              <button id="btn-store-back" class="btn" style="margin-bottom:16px;">← Back to notes</button>
+              <div class="card" style="margin-top:0">
+                <div class="note-content" id="store-note-content"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4.5 Chat tab -->
+          <div class="workspace-tab-panel hidden" id="tab-chat">
+            <div class="chat-container">
+              <div class="chat-messages" id="chat-messages"></div>
+              <div class="chat-input-row">
+                <input type="text" id="chat-user-input" placeholder="Ask a question about your notes..." autocomplete="off" />
+                <button class="btn btn-primary" id="btn-chat-send">Send</button>
+              </div>
+            </div>
+          </div>
+
         </div>
+
       </div>
     </main>
   </div>
@@ -34,55 +97,93 @@ document.getElementById('app').innerHTML = `
 `
 
 // ── Init components ──────────────────────────────────────────────────────────
-sidebar.init(onNoteSelect, onNoteDelete, onHome)
+sidebar.init(onNotebookSelect, onNoteDelete, onHome)
 fileUpload.init(onFileLoaded, onCapturedInput)
 promptInput.init(onGenerate)
 noteViewer.init()
-setView('landing')
+initTabs()
+initStoreBack()
+initSettings()
 
-document.getElementById('btn-save')?.addEventListener('click', () => {
-  if (currentNoteId) showToast('Note is already saved!', 'success')
+// Close any open dropdowns on document click
+document.addEventListener('click', () => {
+  if (_activeExportDropdown) {
+    _activeExportDropdown.classList.add('hidden')
+    _activeExportDropdown = null
+  }
+  if (_activeNoteDropdown) {
+    _activeNoteDropdown.classList.add('hidden')
+    _activeNoteDropdown = null
+  }
 })
 
-// ── Startup: populate sidebar ────────────────────────────────────────────────
-sidebar.loadNotes(api.fetchNotes())
+// ── Restore last opened notebook ─────────────────────────────────────────────
+const _lastId = Number(localStorage.getItem('notebot_last_notebook'))
+const _lastNotebook = _lastId ? api.fetchNotebooks().find(nb => nb.id === _lastId) : null
+if (_lastNotebook) {
+  onNotebookSelect(_lastNotebook.id)
+  document.getElementById('sidebar-notebooks-wrapper')?.classList.remove('collapsed')
+  document.getElementById('sidebar-notebooks-header')?.classList.add('expanded')
+} else {
+  setView('blank')
+}
 
-// ── View coordination ────────────────────────────────────────────────────────
-// 'landing'   → sidebar + upload container, note viewer hidden
-// 'workspace' → sidebar + prompt input + note content viewer, upload container hidden
+// ── View helpers ─────────────────────────────────────────────────────────────
 
 function setView(view) {
-  currentView = view
-  document.getElementById('view-landing')?.classList.toggle('hidden', view !== 'landing')
-  document.getElementById('view-workspace')?.classList.toggle('hidden', view !== 'workspace')
+  document.getElementById('view-blank')?.classList.toggle('hidden', view !== 'blank')
+  document.getElementById('view-notebook')?.classList.toggle('hidden', view !== 'notebook')
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+
+function initTabs() {
+  document.querySelectorAll('.workspace-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab))
+  })
+}
+
+function switchTab(tab) {
+  currentTab = tab
+  if (currentNotebookId) _notebookTabs[currentNotebookId] = tab
+  document.querySelectorAll('.workspace-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab)
+  })
+  document.querySelectorAll('.workspace-tab-panel').forEach(panel => {
+    panel.classList.toggle('hidden', panel.id !== `tab-${tab}`)
+  })
+  if (tab === 'store') renderStoreNotes()
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
-function onNoteSelect(noteId) {
-  try {
-    const note = api.fetchNote(noteId)
-    noteViewer.show()
-    noteViewer.clear()
-    noteViewer.setContent(renderMarkdown(note.content))
-    noteViewer.setRawContent(note.content)
-    noteViewer.setBreadcrumb(note.source_file || note.title)
-    noteViewer.finishStreaming()
-    currentNoteId = noteId
-    setSaveBtn('hidden')
-    sidebar.setActive(noteId)
-    setView('workspace')
-  } catch (err) {
-    showToast(`Failed to load note: ${err.message}`, 'error')
-  }
+function onNotebookSelect(notebookId) {
+  currentNotebookId = notebookId
+  const notebook = api.fetchNotebooks().find(nb => nb.id === notebookId)
+  if (!notebook) return
+
+  localStorage.setItem('notebot_last_notebook', String(notebookId))
+  sidebar.setActiveNotebook(notebookId)
+  setView('notebook')
+  switchTab(_notebookTabs[notebookId] ?? 'generate')
+  updateWorkspaceHeader()
+
+  noteViewer.hide()
+  noteViewer.clear()
+  noteViewer.setSaveStatus('')
+  currentNoteId = null
+
+  initChatPanel(notebook.name)
 }
 
 function onHome() {
+  currentNotebookId = null
+  currentNoteId = null
+  localStorage.removeItem('notebot_last_notebook')
   noteViewer.hide()
   noteViewer.clear()
-  currentNoteId = null
-  setSaveBtn('hidden')
-  setView('landing')
+  noteViewer.setSaveStatus('')
+  setView('blank')
   document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -108,13 +209,7 @@ function onFileLoaded(file, content) {
   currentMetadata = extractClientMetadata(content)
   fileUpload.updateUploadInfo(file.name, currentMetadata)
   promptInput.setEnabled(true)
-  setView('workspace')
 }
-
-// ── Captured input handling ─────────────────────────────────────────────────
-// The Text option tile doesn't produce a real file, so we wrap it in a mock
-// File the same way a real upload would arrive. Link is sent to the server as
-// a URL to fetch; Recording sends the real audio file for transcription.
 
 function onCapturedInput(kind, data) {
   if (kind === 'link') {
@@ -124,10 +219,8 @@ function onCapturedInput(kind, data) {
     currentMetadata = { segmentCount: 0, duration: 'N/A', topic: 'Web Link', isPlainText: true }
     fileUpload.updateUploadInfo(data, currentMetadata)
     promptInput.setEnabled(true)
-    setView('workspace')
     return
   }
-
   if (kind === 'recording') {
     currentLinkUrl = null
     currentFile = data
@@ -135,10 +228,8 @@ function onCapturedInput(kind, data) {
     currentMetadata = { segmentCount: 0, duration: 'N/A', topic: 'Audio Recording', isPlainText: true }
     fileUpload.updateUploadInfo(data.name, currentMetadata)
     promptInput.setEnabled(true)
-    setView('workspace')
     return
   }
-
   if (kind === 'video') {
     currentLinkUrl = null
     currentFile = data
@@ -146,10 +237,8 @@ function onCapturedInput(kind, data) {
     currentMetadata = { segmentCount: 0, duration: 'N/A', topic: 'Video', isPlainText: true }
     fileUpload.updateUploadInfo(data.name, currentMetadata)
     promptInput.setEnabled(true)
-    setView('workspace')
     return
   }
-
   if (kind === 'document') {
     currentLinkUrl = null
     currentFile = data
@@ -157,10 +246,8 @@ function onCapturedInput(kind, data) {
     currentMetadata = { segmentCount: 0, duration: 'N/A', topic: 'Document', isPlainText: true }
     fileUpload.updateUploadInfo(data.name, currentMetadata)
     promptInput.setEnabled(true)
-    setView('workspace')
     return
   }
-
   // 'text'
   const mockFile = new File([data], 'input.txt', { type: 'text/plain' })
   onFileLoaded(mockFile, data)
@@ -171,6 +258,10 @@ async function onGenerate(prompt, preset) {
     showToast('Please upload a class resource, link, or recording first', 'error')
     return
   }
+  if (!currentNotebookId) {
+    showToast('Please select or create a notebook first', 'error')
+    return
+  }
 
   const sourceLabel = currentFile ? currentFile.name : currentLinkUrl
 
@@ -178,17 +269,16 @@ async function onGenerate(prompt, preset) {
   noteViewer.clear()
   noteViewer.show()
   noteViewer.setBreadcrumb(sourceLabel)
+  noteViewer.setSaveStatus('')
   currentNoteId = null
-  sidebar.setActive(null)
-  setSaveBtn('pending')
 
   let rawAccumulated = ''
   let cursorInjected = false
   let lastRender = 0
-  const RENDER_INTERVAL = 150 // ms — throttle re-renders so large docs don't freeze the tab
+  const RENDER_INTERVAL = 150
 
   try {
-    const stream = await api.generateNotes(currentFile, prompt, preset, currentLinkUrl)
+    const stream = await api.generateNotes(currentFile, prompt, preset, currentLinkUrl, currentNotebookId)
 
     await readSSE(stream, (chunk) => {
       if (chunk.error) {
@@ -215,10 +305,10 @@ async function onGenerate(prompt, preset) {
       }
 
       if (chunk.done) {
-        // Final render with complete markdown before saving/exporting.
         noteViewer.setContent(renderMarkdown(rawAccumulated))
 
-        const savedNote = api.saveNote({
+        const savedNote = api.saveNoteToNotebook(currentNotebookId, {
+          id: chunk.noteId,
           title: chunk.title,
           content: rawAccumulated,
           source_file: sourceLabel,
@@ -231,11 +321,11 @@ async function onGenerate(prompt, preset) {
         currentNoteId = savedNote.id
         noteViewer.setRawContent(rawAccumulated)
         noteViewer.finishStreaming()
-        setSaveBtn('saved')
-        sidebar.setActive(savedNote.id)
-        sidebar.loadNotes(api.fetchNotes())
-        sidebar.setActive(savedNote.id)
-        showToast(`Notes saved locally: "${savedNote.title}"`, 'success')
+        noteViewer.setSaveStatus('✓ Saved to notebook')
+        showToast(`Notes saved to notebook: "${savedNote.title}"`, 'success')
+        sidebar.refreshNotebooks()
+        updateWorkspaceHeader()
+        if (currentTab === 'store') renderStoreNotes()
       }
     })
   } catch (err) {
@@ -244,6 +334,359 @@ async function onGenerate(prompt, preset) {
   } finally {
     promptInput.setLoading(false)
   }
+}
+
+// ── Store Notes ──────────────────────────────────────────────────────────────
+
+function renderStoreNotes() {
+  const listEl = document.getElementById('store-notes-list')
+  const readerEl = document.getElementById('store-note-reader')
+  if (!listEl || !readerEl) return
+
+  readerEl.classList.add('hidden')
+  listEl.classList.remove('hidden')
+
+  const notebook = api.fetchNotebooks().find(nb => nb.id === currentNotebookId)
+  const notes = notebook?.notes ?? []
+
+  if (!notes.length) {
+    listEl.innerHTML = `
+      <div class="sidebar-empty" style="padding:60px 24px;">
+        <div class="sidebar-empty-icon">📋</div>
+        <div>No notes saved in this notebook yet.<br>Generate some notes first!</div>
+      </div>
+    `
+    return
+  }
+
+  listEl.innerHTML = `
+    <div class="store-notes-grid">
+      ${notes.map(note => `
+        <div class="store-note-card" data-id="${note.id}">
+          <!-- 3-dots menu -->
+          <button class="store-note-menu-btn" data-id="${note.id}" title="More options" aria-label="Note options">⋯</button>
+          <div class="store-note-dropdown hidden" id="note-dd-${note.id}">
+            <button class="store-note-dd-item" data-action="rename" data-id="${note.id}">✏ Rename Note</button>
+            <button class="store-note-dd-item" data-action="move"   data-id="${note.id}">↗ Move to Notebook</button>
+            <button class="store-note-dd-item" data-action="copy"   data-id="${note.id}">⎘ Copy to Notebook(s)</button>
+          </div>
+
+          <div class="store-note-card-header">
+            <div class="store-note-title">${escHtml(note.title)}</div>
+            <div class="store-note-meta">
+              ${note.preset ? `<span class="preset-badge">${note.preset.replace(/_/g, ' ')}</span>` : ''}
+              <span>${fmtDate(note.created_at)}</span>
+            </div>
+          </div>
+          <div class="store-note-preview">${escHtml(note.preview ?? '')}</div>
+          <div class="store-note-actions" onclick="event.stopPropagation()">
+            <button class="btn btn-sm store-note-view" data-id="${note.id}">View</button>
+            <div class="store-note-export-wrap">
+              <button class="btn btn-sm store-note-export-btn" data-id="${note.id}">Export ▾</button>
+              <div class="store-export-dropdown hidden" id="export-dd-${note.id}">
+                <button class="store-export-item" data-format="md"   data-id="${note.id}">Markdown (.md)</button>
+                <button class="store-export-item" data-format="txt"  data-id="${note.id}">Plain Text (.txt)</button>
+                <button class="store-export-item" data-format="pdf"  data-id="${note.id}">PDF (.pdf)</button>
+                <button class="store-export-item" data-format="docx" data-id="${note.id}">Word (.docx)</button>
+              </div>
+            </div>
+            <button class="btn btn-sm store-note-delete" data-id="${note.id}">Delete</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `
+
+  // Card click → view note
+  listEl.querySelectorAll('.store-note-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = Number(card.dataset.id)
+      const note = notes.find(n => n.id === id)
+      if (note) viewStoredNote(note)
+    })
+  })
+
+  // View button
+  listEl.querySelectorAll('.store-note-view').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const note = notes.find(n => n.id === Number(btn.dataset.id))
+      if (note) viewStoredNote(note)
+    })
+  })
+
+  // Delete button → custom modal
+  listEl.querySelectorAll('.store-note-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = Number(btn.dataset.id)
+      const note = notes.find(n => n.id === id)
+      if (!note) return
+      showDeleteNoteConfirm(note, () => {
+        try {
+          api.deleteNoteFromNotebook(currentNotebookId, id)
+          api.deleteNoteVectors(id)
+          showToast('Note deleted', 'success')
+          sidebar.refreshNotebooks()
+          updateWorkspaceHeader()
+          renderStoreNotes()
+        } catch (err) {
+          showToast(`Delete failed: ${err.message}`, 'error')
+        }
+      })
+    })
+  })
+
+  // 3-dots menu button → toggle dropdown
+  listEl.querySelectorAll('.store-note-menu-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.dataset.id
+      const dd = document.getElementById(`note-dd-${id}`)
+      if (!dd) return
+      const isOpen = !dd.classList.contains('hidden')
+      closeActiveNoteDropdown()
+      if (_activeExportDropdown) { _activeExportDropdown.classList.add('hidden'); _activeExportDropdown = null }
+      if (!isOpen) {
+        dd.classList.remove('hidden')
+        btn.classList.add('open')
+        _activeNoteDropdown = dd
+        _activeNoteDropdown._btn = btn
+      }
+    })
+  })
+
+  // 3-dots dropdown action items
+  listEl.querySelectorAll('.store-note-dd-item').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const action = btn.dataset.action
+      const id = Number(btn.dataset.id)
+      const note = notes.find(n => n.id === id)
+      closeActiveNoteDropdown()
+      if (!note) return
+
+      if (action === 'rename') {
+        showRenameNoteModal(note, currentNotebookId, (newTitle) => {
+          note.title = newTitle
+          renderStoreNotes()
+        })
+      } else if (action === 'move') {
+        showMoveNoteModal(note, currentNotebookId, () => {
+          sidebar.refreshNotebooks()
+          updateWorkspaceHeader()
+          renderStoreNotes()
+        })
+      } else if (action === 'copy') {
+        showCopyNoteModal(note, currentNotebookId, () => {
+          sidebar.refreshNotebooks()
+        })
+      }
+    })
+  })
+
+  // Export dropdown toggle
+  listEl.querySelectorAll('.store-note-export-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.dataset.id
+      const dd = document.getElementById(`export-dd-${id}`)
+      if (!dd) return
+      const isOpen = !dd.classList.contains('hidden')
+      if (_activeExportDropdown) {
+        _activeExportDropdown.classList.add('hidden')
+        _activeExportDropdown = null
+      }
+      if (!isOpen) {
+        dd.classList.remove('hidden')
+        _activeExportDropdown = dd
+      }
+    })
+  })
+
+  // Export item actions
+  listEl.querySelectorAll('.store-export-item').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      const id = Number(btn.dataset.id)
+      const format = btn.dataset.format
+      const note = notes.find(n => n.id === id)
+      if (_activeExportDropdown) {
+        _activeExportDropdown.classList.add('hidden')
+        _activeExportDropdown = null
+      }
+      if (note) await exportNote(note, format)
+    })
+  })
+}
+
+function viewStoredNote(note) {
+  const listEl = document.getElementById('store-notes-list')
+  const readerEl = document.getElementById('store-note-reader')
+  const contentEl = document.getElementById('store-note-content')
+  if (!listEl || !readerEl || !contentEl) return
+  listEl.classList.add('hidden')
+  readerEl.classList.remove('hidden')
+  contentEl.innerHTML = renderMarkdown(note.content)
+}
+
+function initStoreBack() {
+  document.getElementById('btn-store-back')?.addEventListener('click', renderStoreNotes)
+}
+
+async function exportNote(note, format) {
+  const content = note.content ?? ''
+  const slug = (note.title || 'notes').replace(/\s+/g, '-').toLowerCase()
+
+  if (format === 'md') {
+    triggerDownload(content, `${slug}.md`, 'text/markdown')
+    showToast('Exported as .md', 'success')
+    return
+  }
+  if (format === 'txt') {
+    triggerDownload(content, `${slug}.txt`, 'text/plain')
+    showToast('Exported as .txt', 'success')
+    return
+  }
+  if (format === 'pdf') {
+    try {
+      showToast('Generating PDF…', 'success')
+      const tempEl = document.createElement('div')
+      tempEl.className = 'note-content'
+      tempEl.style.cssText = 'position:fixed;top:-9999px;left:0;width:800px;background:#fff;color:#000;padding:32px;font-family:Inter,sans-serif;'
+      tempEl.innerHTML = renderMarkdown(content)
+      document.body.appendChild(tempEl)
+      const { exportNotesToPdf } = await import('./services/pdfExport.js')
+      await exportNotesToPdf(tempEl, `${slug}.pdf`)
+      document.body.removeChild(tempEl)
+      showToast('Exported as .pdf', 'success')
+    } catch (err) {
+      showToast(`PDF export failed: ${err.message}`, 'error')
+    }
+    return
+  }
+  if (format === 'docx') {
+    try {
+      const { buildDocxBlob } = await import('./services/docxExport.js')
+      const blob = await buildDocxBlob(content, note.title || 'Notes')
+      const url = URL.createObjectURL(blob)
+      const a = Object.assign(document.createElement('a'), { href: url, download: `${slug}.docx` })
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('Exported as .docx', 'success')
+    } catch (err) {
+      showToast(`DOCX export failed: ${err.message}`, 'error')
+    }
+  }
+}
+
+function closeActiveNoteDropdown() {
+  if (_activeNoteDropdown) {
+    _activeNoteDropdown.classList.add('hidden')
+    _activeNoteDropdown._btn?.classList.remove('open')
+    _activeNoteDropdown = null
+  }
+}
+
+function triggerDownload(content, filename, mimeType) {
+  const url = URL.createObjectURL(new Blob([content], { type: mimeType }))
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename })
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
+
+function initChatPanel(notebookName) {
+  const messages = document.getElementById('chat-messages')
+  const input = document.getElementById('chat-user-input')
+  const sendBtn = document.getElementById('btn-chat-send')
+  if (!messages) return
+
+  messages.innerHTML = ''
+  addChatBubble('ai', `Hi there! This is the Chat channel for <strong>${escHtml(notebookName ?? 'this notebook')}</strong>. Ask me questions or request summaries regarding the notes stored in this notebook.`)
+
+  // Sync banner — shown when there are notes that may not be in Pinecone yet
+  const notebook = api.fetchNotebooks().find(nb => nb.id === currentNotebookId)
+  const noteCount = notebook?.notes?.length ?? 0
+  if (noteCount > 0) {
+    const banner = document.createElement('div')
+    banner.className = 'chat-sync-banner'
+    banner.innerHTML = `
+      <span>Sync your ${noteCount} note${noteCount !== 1 ? 's' : ''} so the AI can answer questions about them.</span>
+      <button class="btn btn-sm btn-primary" id="btn-chat-sync">Sync Notes</button>
+    `
+    messages.appendChild(banner)
+
+    banner.querySelector('#btn-chat-sync')?.addEventListener('click', async () => {
+      banner.innerHTML = `<span class="chat-sync-progress">Syncing ${noteCount} note${noteCount !== 1 ? 's' : ''}… this may take a moment</span>`
+      try {
+        const result = await api.syncNotebookNotes(currentNotebookId, notebook.notes)
+        banner.innerHTML = `<span class="chat-sync-done">✓ Synced — ${result.totalChunks} chunks indexed. You can now ask questions!</span>`
+        setTimeout(() => banner.remove(), 4000)
+      } catch (err) {
+        banner.innerHTML = `<span style="color:var(--color-danger)">Sync failed: ${escHtml(err.message)}</span>`
+      }
+    })
+  }
+
+  // Re-attach send handlers (remove old ones by cloning the button)
+  const newSendBtn = sendBtn?.cloneNode(true)
+  sendBtn?.parentNode?.replaceChild(newSendBtn, sendBtn)
+  const newInput = input?.cloneNode(true)
+  input?.parentNode?.replaceChild(newInput, input)
+
+  let chatStreaming = false
+
+  async function send() {
+    const inputEl = document.getElementById('chat-user-input')
+    const text = inputEl?.value.trim()
+    if (!text || chatStreaming) return
+
+    addChatBubble('user', escHtml(text))
+    inputEl.value = ''
+
+    chatStreaming = true
+    const aiBubble = addChatBubble('ai', '<span class="chat-thinking">Thinking…</span>')
+    let accumulated = ''
+
+    try {
+      const stream = await api.chatWithNotebook(currentNotebookId, text)
+      await readSSE(stream, (chunk) => {
+        if (chunk.error) {
+          if (aiBubble) aiBubble.innerHTML = `<em>${escHtml(chunk.error)}</em>`
+          return
+        }
+        if (chunk.text) {
+          accumulated += chunk.text
+          if (aiBubble) {
+            aiBubble.innerHTML = renderMarkdown(accumulated)
+            document.getElementById('chat-messages')?.scrollTo({ top: 99999 })
+          }
+        }
+      })
+    } catch (err) {
+      if (aiBubble) aiBubble.innerHTML = `<em>Failed: ${escHtml(err.message)}</em>`
+    } finally {
+      chatStreaming = false
+    }
+  }
+
+  newSendBtn?.addEventListener('click', send)
+  newInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+  })
+}
+
+function addChatBubble(role, html) {
+  const messages = document.getElementById('chat-messages')
+  if (!messages) return null
+  const div = document.createElement('div')
+  div.className = `chat-bubble chat-bubble-${role}`
+  div.innerHTML = html
+  messages.appendChild(div)
+  messages.scrollTop = messages.scrollHeight
+  return div
 }
 
 // ── SSE stream parser ────────────────────────────────────────────────────────
@@ -259,56 +702,43 @@ async function readSSE(readableStream, onChunk) {
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
-
       const lines = buffer.split('\n')
-      buffer = lines.pop() // keep any incomplete trailing line
+      buffer = lines.pop()
 
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed.startsWith('data: ')) continue
         const payload = trimmed.slice(6).trim()
         if (!payload) continue
-        try {
-          onChunk(JSON.parse(payload))
-        } catch { /* skip malformed JSON */ }
+        try { onChunk(JSON.parse(payload)) } catch { /* skip malformed JSON */ }
       }
     }
 
-    // Flush remaining buffer after stream closes
     const remaining = buffer.trim()
     if (remaining.startsWith('data: ')) {
       const payload = remaining.slice(6).trim()
-      if (payload) {
-        try { onChunk(JSON.parse(payload)) } catch { /* ignore */ }
-      }
+      if (payload) { try { onChunk(JSON.parse(payload)) } catch { /* ignore */ } }
     }
   } finally {
     reader.releaseLock()
   }
 }
 
-// ── Save button state ────────────────────────────────────────────────────────
+// ── Workspace notebook header ─────────────────────────────────────────────────
 
-function setSaveBtn(state) {
-  const btn = document.getElementById('btn-save')
-  if (!btn) return
-  btn.classList.remove('hidden')
-  btn.disabled = true
-  switch (state) {
-    case 'saved':
-      btn.textContent = '✓ Saved'
-      break
-    case 'pending':
-      btn.textContent = '💾 Save'
-      break
-    case 'hidden':
-      btn.classList.add('hidden')
-      break
+function updateWorkspaceHeader() {
+  const notebook = api.fetchNotebooks().find(nb => nb.id === currentNotebookId)
+  if (!notebook) return
+  const nameEl  = document.getElementById('workspace-notebook-name')
+  const countEl = document.getElementById('workspace-notebook-count')
+  if (nameEl)  nameEl.textContent  = notebook.name
+  if (countEl) {
+    const n = notebook.notes.length
+    countEl.textContent = n === 0 ? 'No notes yet' : `${n} note${n !== 1 ? 's' : ''}`
   }
 }
 
 // ── Client-side metadata extraction ──────────────────────────────────────────
-// Mirrors the server parser logic so the UI can show a preview before generation.
 
 function extractClientMetadata(content) {
   try {
@@ -347,14 +777,14 @@ function parseTs(ts) {
 // ── Settings modal ────────────────────────────────────────────────────────────
 
 function initSettings() {
-  const modal    = document.getElementById('settings-modal')
-  const input    = document.getElementById('settings-api-key')
-  const toggle   = document.getElementById('settings-toggle')
-  const saveBtn  = document.getElementById('settings-save')
-  const cancelBtn= document.getElementById('settings-cancel')
-  const closeBtn = document.getElementById('settings-close')
-  const openBtn  = document.getElementById('btn-settings')
-  const status   = document.getElementById('settings-status')
+  const modal     = document.getElementById('settings-modal')
+  const input     = document.getElementById('settings-api-key')
+  const toggle    = document.getElementById('settings-toggle')
+  const saveBtn   = document.getElementById('settings-save')
+  const cancelBtn = document.getElementById('settings-cancel')
+  const closeBtn  = document.getElementById('settings-close')
+  const openBtn   = document.getElementById('btn-settings')
+  const status    = document.getElementById('settings-status')
 
   function openModal() {
     const stored = localStorage.getItem('gemini_api_key') || ''
@@ -366,9 +796,7 @@ function initSettings() {
     input.focus()
   }
 
-  function closeModal() {
-    modal.classList.add('hidden')
-  }
+  function closeModal() { modal.classList.add('hidden') }
 
   openBtn?.addEventListener('click', openModal)
   closeBtn?.addEventListener('click', closeModal)
@@ -398,9 +826,11 @@ function initSettings() {
   })
 }
 
-initSettings()
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
+function fmtDate(str) {
+  return new Date(str).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
 function fmtSec(s) {
   s = Math.floor(s)
@@ -409,4 +839,10 @@ function fmtSec(s) {
   const sec = s % 60
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
   return `${m}:${String(sec).padStart(2, '0')}`
+}
+
+function escHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
