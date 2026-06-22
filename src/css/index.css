@@ -1804,6 +1804,142 @@ pre:has(.hljs) { margin-bottom: 16px; }
   box-shadow: var(--shadow-glow);
 }
 
+.store-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 12px 0;
+}
+
+.store-section {
+  margin-bottom: 28px;
+}
+
+.store-section-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.store-section-count {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.store-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.store-search-modes {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.store-search-mode-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.store-search-mode-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--text-primary);
+}
+
+.store-search-mode-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.store-search-date-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.store-search-date-sep {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+#store-search-input,
+#store-search-date-from,
+#store-search-date-to {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+#store-search-input:focus,
+#store-search-date-from:focus,
+#store-search-date-to:focus {
+  border-color: var(--color-primary);
+}
+
+.store-upload-btn-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.store-upload-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.store-upload-card {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+.store-upload-filename {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.store-upload-preview {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.store-upload-error {
+  color: var(--color-danger);
+  font-size: 0.9rem;
+}
+
 .chat-sync-banner {
   display: flex;
   align-items: center;

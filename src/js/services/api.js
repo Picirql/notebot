@@ -32,6 +32,25 @@ export async function generateNotes(file, prompt, preset, link, notebookId) {
   return res.body
 }
 
+export async function transcribeNote(notebookId, file) {
+  const form = new FormData()
+  form.append('file', file)
+  if (notebookId) form.append('notebookId', String(notebookId))
+
+  const apiKey = localStorage.getItem('gemini_api_key') || ''
+  const headers = {}
+  if (apiKey) headers['x-api-key'] = apiKey
+
+  let res
+  try {
+    res = await fetch('/api/transcribe', { method: 'POST', body: form, headers })
+  } catch (err) {
+    throw new Error(`Network error: ${err.message}`)
+  }
+  if (!res.ok) throw new Error(`Server error ${res.status}`)
+  return res.body
+}
+
 // ── Legacy flat-note API (used by main.js / sidebar.js — kept until migrated) ──
 
 const LEGACY_KEY = 'notebot_notes'
@@ -155,6 +174,17 @@ export function saveNoteToNotebook(notebookId, note) {
   notebooks[idx].notes.unshift(saved)
   writeNotebooks(notebooks)
   return saved
+}
+
+export function changeNoteDate(notebookId, noteId, dateStr) {
+  const notebooks = readNotebooks()
+  const nb = notebooks.find(nb => nb.id === Number(notebookId))
+  if (!nb) throw new Error(`Notebook ${notebookId} not found`)
+  const note = nb.notes.find(n => n.id === Number(noteId))
+  if (!note) throw new Error(`Note ${noteId} not found`)
+  note.created_at = new Date(dateStr).toISOString()
+  writeNotebooks(notebooks)
+  return note
 }
 
 export function deleteNoteFromNotebook(notebookId, noteId) {

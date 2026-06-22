@@ -176,6 +176,43 @@ export async function extractChunkMetadata(chunkText, apiKey) {
   }
 }
 
+// ── Transcription (format only, no content changes) ──────────────────────────
+
+const TRANSCRIBE_SYSTEM = `You are a note formatter. Your ONLY job is to convert the provided content into clean, structured Markdown.
+
+Absolute rules — any violation is unacceptable:
+1. Preserve every single piece of information exactly as written — do not add, remove, or rephrase anything
+2. Do not add examples, explanations, summaries, or any content not present in the original
+3. Fix only obvious OCR/scanning artifacts (garbled characters) if completely unambiguous
+4. Apply clean Markdown: ## for main headings, ### for subheadings, - for bullet lists, **bold** for key terms, $...$ or $$...$$ for math expressions
+5. Output the formatted Markdown only — no preamble, no "Here is the formatted note:" prefix`
+
+export async function* transcribeFromMedia(mediaBuffer, mimeType, apiKey) {
+  const clientKey = apiKey || process.env.GEMINI_API_KEY
+  if (!clientKey) throw new Error('Gemini API Key is missing. Please configure it in the settings panel (⚙).')
+
+  const ai = new GoogleGenAI({ apiKey: clientKey })
+  const instruction = mimeType.startsWith('image/')
+    ? 'Transcribe all text from this image of student notes exactly as written, then format it following the system instructions.'
+    : 'Transcribe all text from this document exactly as written, then format it following the system instructions.'
+
+  const stream = await ai.models.generateContentStream({
+    model: MODEL,
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: instruction },
+        { inlineData: { mimeType, data: mediaBuffer.toString('base64') } },
+      ],
+    }],
+    config: { systemInstruction: TRANSCRIBE_SYSTEM },
+  })
+
+  for await (const chunk of stream) {
+    if (chunk.text) yield chunk.text
+  }
+}
+
 export async function* generateNotesFromVideoUrl(videoUrl, prompt, preset, apiKey) {
   const clientKey = apiKey || process.env.GEMINI_API_KEY
   if (!clientKey) {

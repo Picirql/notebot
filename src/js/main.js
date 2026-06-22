@@ -10,6 +10,7 @@ import {
   showDeleteNoteConfirm,
   showMoveNoteModal,
   showCopyNoteModal,
+  showChangeDateModal,
 } from './components/noteModals.js'
 
 // ── App state ────────────────────────────────────────────────────────────────
@@ -23,6 +24,10 @@ let currentTab = 'generate'
 let _activeExportDropdown = null
 let _activeNoteDropdown = null
 const _notebookTabs = {} // notebookId → last active tab
+let storeSearchMode = 'name'
+let storeSearchQuery = ''
+let storeSearchDateFrom = ''
+let storeSearchDateTo = ''
 
 // ── Render layout ────────────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = `
@@ -68,6 +73,27 @@ document.getElementById('app').innerHTML = `
 
           <!-- 4.4 Store Notes tab -->
           <div class="workspace-tab-panel hidden" id="tab-store">
+            <div class="store-toolbar">
+              <input type="file" id="upload-note-input" accept=".jpg,.jpeg,.png,.pdf" style="display:none">
+              <div class="store-upload-btn-group">
+                <button class="btn btn-primary" id="btn-upload-note">↑ Upload My Notes</button>
+                <span class="store-upload-hint">JPG, PNG, PDF</span>
+              </div>
+            </div>
+            <div id="store-upload-progress" class="hidden"></div>
+            <div class="store-search-bar hidden" id="store-search-bar">
+              <div class="store-search-modes">
+                <button class="store-search-mode-btn active" data-mode="name">Name</button>
+                <button class="store-search-mode-btn" data-mode="date">Date</button>
+                <button class="store-search-mode-btn" data-mode="content">Content</button>
+              </div>
+              <input type="text" id="store-search-input" placeholder="Search by title..." autocomplete="off">
+              <div id="store-search-date-range" class="store-search-date-range hidden">
+                <input type="date" id="store-search-date-from">
+                <span class="store-search-date-sep">to</span>
+                <input type="date" id="store-search-date-to">
+              </div>
+            </div>
             <div id="store-notes-list"></div>
             <div id="store-note-reader" class="hidden">
               <button id="btn-store-back" class="btn" style="margin-bottom:16px;">← Back to notes</button>
@@ -103,6 +129,8 @@ promptInput.init(onGenerate)
 noteViewer.init()
 initTabs()
 initStoreBack()
+initStoreSearch()
+initUploadNote()
 initSettings()
 
 // Close any open dropdowns on document click
@@ -153,6 +181,36 @@ function switchTab(tab) {
     panel.classList.toggle('hidden', panel.id !== `tab-${tab}`)
   })
   if (tab === 'store') renderStoreNotes()
+  if (tab === 'chat') refreshChatSyncBanner()
+}
+
+function refreshChatSyncBanner() {
+  const messages = document.getElementById('chat-messages')
+  if (!messages) return
+  messages.querySelector('.chat-sync-banner')?.remove()
+
+  const notebook = api.fetchNotebooks().find(nb => nb.id === currentNotebookId)
+  const noteCount = notebook?.notes?.length ?? 0
+  if (noteCount === 0) return
+
+  const banner = document.createElement('div')
+  banner.className = 'chat-sync-banner'
+  banner.innerHTML = `
+    <span>Sync your ${noteCount} note${noteCount !== 1 ? 's' : ''} so the AI can answer questions about them.</span>
+    <button class="btn btn-sm btn-primary" id="btn-chat-sync">Sync Notes</button>
+  `
+  messages.appendChild(banner)
+
+  banner.querySelector('#btn-chat-sync')?.addEventListener('click', async () => {
+    banner.innerHTML = `<span class="chat-sync-progress">Syncing ${noteCount} note${noteCount !== 1 ? 's' : ''}… this may take a moment</span>`
+    try {
+      const result = await api.syncNotebookNotes(currentNotebookId, notebook.notes)
+      banner.innerHTML = `<span class="chat-sync-done">✓ Synced — ${result.totalChunks} chunks indexed. You can now ask questions!</span>`
+      setTimeout(() => banner.remove(), 4000)
+    } catch (err) {
+      banner.innerHTML = `<span style="color:var(--color-danger)">Sync failed: ${escHtml(err.message)}</span>`
+    }
+  })
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -341,6 +399,7 @@ async function onGenerate(prompt, preset) {
 function renderStoreNotes() {
   const listEl = document.getElementById('store-notes-list')
   const readerEl = document.getElementById('store-note-reader')
+  const searchBar = document.getElementById('store-search-bar')
   if (!listEl || !readerEl) return
 
   readerEl.classList.add('hidden')
@@ -350,6 +409,7 @@ function renderStoreNotes() {
   const notes = notebook?.notes ?? []
 
   if (!notes.length) {
+    searchBar?.classList.add('hidden')
     listEl.innerHTML = `
       <div class="sidebar-empty" style="padding:60px 24px;">
         <div class="sidebar-empty-icon">📋</div>
@@ -359,43 +419,87 @@ function renderStoreNotes() {
     return
   }
 
-  listEl.innerHTML = `
-    <div class="store-notes-grid">
-      ${notes.map(note => `
-        <div class="store-note-card" data-id="${note.id}">
-          <!-- 3-dots menu -->
-          <button class="store-note-menu-btn" data-id="${note.id}" title="More options" aria-label="Note options">⋯</button>
-          <div class="store-note-dropdown hidden" id="note-dd-${note.id}">
-            <button class="store-note-dd-item" data-action="rename" data-id="${note.id}">✏ Rename Note</button>
-            <button class="store-note-dd-item" data-action="move"   data-id="${note.id}">↗ Move to Notebook</button>
-            <button class="store-note-dd-item" data-action="copy"   data-id="${note.id}">⎘ Copy to Notebook(s)</button>
-          </div>
+  searchBar?.classList.remove('hidden')
 
-          <div class="store-note-card-header">
-            <div class="store-note-title">${escHtml(note.title)}</div>
-            <div class="store-note-meta">
-              ${note.preset ? `<span class="preset-badge">${note.preset.replace(/_/g, ' ')}</span>` : ''}
-              <span>${fmtDate(note.created_at)}</span>
-            </div>
-          </div>
-          <div class="store-note-preview">${escHtml(note.preview ?? '')}</div>
-          <div class="store-note-actions" onclick="event.stopPropagation()">
-            <button class="btn btn-sm store-note-view" data-id="${note.id}">View</button>
-            <div class="store-note-export-wrap">
-              <button class="btn btn-sm store-note-export-btn" data-id="${note.id}">Export ▾</button>
-              <div class="store-export-dropdown hidden" id="export-dd-${note.id}">
-                <button class="store-export-item" data-format="md"   data-id="${note.id}">Markdown (.md)</button>
-                <button class="store-export-item" data-format="txt"  data-id="${note.id}">Plain Text (.txt)</button>
-                <button class="store-export-item" data-format="pdf"  data-id="${note.id}">PDF (.pdf)</button>
-                <button class="store-export-item" data-format="docx" data-id="${note.id}">Word (.docx)</button>
-              </div>
-            </div>
-            <button class="btn btn-sm store-note-delete" data-id="${note.id}">Delete</button>
+  // Apply search filter
+  let displayNotes = notes
+  const hasDateFilter = storeSearchMode === 'date' && (storeSearchDateFrom || storeSearchDateTo)
+  if (storeSearchQuery || hasDateFilter) {
+    if (storeSearchMode === 'name') {
+      const q = storeSearchQuery.toLowerCase()
+      displayNotes = notes.filter(n => (n.title ?? '').toLowerCase().includes(q))
+    } else if (storeSearchMode === 'content') {
+      const q = storeSearchQuery.toLowerCase()
+      displayNotes = notes.filter(n => (n.content ?? '').toLowerCase().includes(q))
+    } else if (storeSearchMode === 'date') {
+      displayNotes = notes.filter(n => {
+        const noteDate = new Date(n.created_at).toISOString().split('T')[0]
+        if (storeSearchDateFrom && noteDate < storeSearchDateFrom) return false
+        if (storeSearchDateTo   && noteDate > storeSearchDateTo)   return false
+        return true
+      })
+    }
+  }
+
+  const generatedNotes = displayNotes.filter(n => n.preset !== 'uploaded')
+  const uploadedNotes  = displayNotes.filter(n => n.preset === 'uploaded')
+
+  if (!displayNotes.length) {
+    listEl.innerHTML = `
+      <div class="sidebar-empty" style="padding:40px 24px;">
+        <div class="sidebar-empty-icon">🔍</div>
+        <div>No notes match your search.</div>
+      </div>
+    `
+    return
+  }
+
+  function noteCardHTML(note) {
+    return `
+      <div class="store-note-card" data-id="${note.id}">
+        <button class="store-note-menu-btn" data-id="${note.id}" title="More options" aria-label="Note options">⋯</button>
+        <div class="store-note-dropdown hidden" id="note-dd-${note.id}">
+          <button class="store-note-dd-item" data-action="rename"     data-id="${note.id}">✏ Rename Note</button>
+          <button class="store-note-dd-item" data-action="changedate" data-id="${note.id}">📅 Change Date</button>
+          <button class="store-note-dd-item" data-action="move"       data-id="${note.id}">↗ Move to Notebook</button>
+          <button class="store-note-dd-item" data-action="copy"       data-id="${note.id}">⎘ Copy to Notebook(s)</button>
+        </div>
+        <div class="store-note-card-header">
+          <div class="store-note-title">${escHtml(note.title)}</div>
+          <div class="store-note-meta">
+            ${note.preset && note.preset !== 'uploaded' ? `<span class="preset-badge">${note.preset.replace(/_/g, ' ')}</span>` : ''}
+            <span>${fmtDate(note.created_at)}</span>
           </div>
         </div>
-      `).join('')}
-    </div>
-  `
+        <div class="store-note-preview">${escHtml(note.preview ?? '')}</div>
+        <div class="store-note-actions" onclick="event.stopPropagation()">
+          <button class="btn btn-sm store-note-view" data-id="${note.id}">View</button>
+          <div class="store-note-export-wrap">
+            <button class="btn btn-sm store-note-export-btn" data-id="${note.id}">Export ▾</button>
+            <div class="store-export-dropdown hidden" id="export-dd-${note.id}">
+              <button class="store-export-item" data-format="md"   data-id="${note.id}">Markdown (.md)</button>
+              <button class="store-export-item" data-format="txt"  data-id="${note.id}">Plain Text (.txt)</button>
+              <button class="store-export-item" data-format="pdf"  data-id="${note.id}">PDF (.pdf)</button>
+              <button class="store-export-item" data-format="docx" data-id="${note.id}">Word (.docx)</button>
+            </div>
+          </div>
+          <button class="btn btn-sm store-note-delete" data-id="${note.id}">Delete</button>
+        </div>
+      </div>
+    `
+  }
+
+  function sectionHTML(title, notesList) {
+    if (!notesList.length) return ''
+    return `
+      <div class="store-section">
+        <div class="store-section-header">${title} <span class="store-section-count">${notesList.length}</span></div>
+        <div class="store-notes-grid">${notesList.map(noteCardHTML).join('')}</div>
+      </div>
+    `
+  }
+
+  listEl.innerHTML = sectionHTML('Generated Notes', generatedNotes) + sectionHTML('Uploaded Notes', uploadedNotes)
 
   // Card click → view note
   listEl.querySelectorAll('.store-note-card').forEach(card => {
@@ -471,6 +575,10 @@ function renderStoreNotes() {
           note.title = newTitle
           renderStoreNotes()
         })
+      } else if (action === 'changedate') {
+        showChangeDateModal(note, currentNotebookId, () => {
+          renderStoreNotes()
+        })
       } else if (action === 'move') {
         showMoveNoteModal(note, currentNotebookId, () => {
           sidebar.refreshNotebooks()
@@ -526,12 +634,120 @@ function viewStoredNote(note) {
   const contentEl = document.getElementById('store-note-content')
   if (!listEl || !readerEl || !contentEl) return
   listEl.classList.add('hidden')
+  document.getElementById('store-search-bar')?.classList.add('hidden')
   readerEl.classList.remove('hidden')
   contentEl.innerHTML = renderMarkdown(note.content)
 }
 
 function initStoreBack() {
   document.getElementById('btn-store-back')?.addEventListener('click', renderStoreNotes)
+}
+
+function initStoreSearch() {
+  const textInput   = document.getElementById('store-search-input')
+  const dateRange   = document.getElementById('store-search-date-range')
+  const dateFrom    = document.getElementById('store-search-date-from')
+  const dateTo      = document.getElementById('store-search-date-to')
+
+  document.querySelectorAll('.store-search-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      storeSearchMode = btn.dataset.mode
+      storeSearchQuery = ''
+      storeSearchDateFrom = ''
+      storeSearchDateTo = ''
+      document.querySelectorAll('.store-search-mode-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+
+      if (storeSearchMode === 'date') {
+        textInput.classList.add('hidden')
+        dateRange.classList.remove('hidden')
+        if (dateFrom) dateFrom.value = ''
+        if (dateTo)   dateTo.value   = ''
+      } else {
+        textInput.classList.remove('hidden')
+        dateRange.classList.add('hidden')
+        textInput.value = ''
+        textInput.placeholder = storeSearchMode === 'name' ? 'Search by title...' : 'Search in note content...'
+        textInput.focus()
+      }
+      renderStoreNotes()
+    })
+  })
+
+  textInput?.addEventListener('input', () => {
+    storeSearchQuery = textInput.value.trim()
+    renderStoreNotes()
+  })
+
+  dateFrom?.addEventListener('change', () => {
+    storeSearchDateFrom = dateFrom.value
+    renderStoreNotes()
+  })
+
+  dateTo?.addEventListener('change', () => {
+    storeSearchDateTo = dateTo.value
+    renderStoreNotes()
+  })
+}
+
+function initUploadNote() {
+  const btn = document.getElementById('btn-upload-note')
+  const input = document.getElementById('upload-note-input')
+  if (!btn || !input) return
+
+  btn.addEventListener('click', () => input.click())
+  input.addEventListener('change', () => {
+    const file = input.files?.[0]
+    input.value = ''
+    if (file) handleUploadNote(file)
+  })
+}
+
+async function handleUploadNote(file) {
+  const progressEl = document.getElementById('store-upload-progress')
+  const listEl = document.getElementById('store-notes-list')
+  if (!progressEl) return
+
+  progressEl.className = 'store-upload-card'
+  progressEl.innerHTML = `
+    <div class="store-upload-filename">Formatting: <strong>${escHtml(file.name)}</strong></div>
+    <div class="note-content store-upload-preview" id="store-upload-preview"><span class="chat-thinking">Processing…</span></div>
+  `
+  listEl?.classList.add('hidden')
+
+  let rawAccumulated = ''
+  let savedNote = null
+
+  try {
+    const stream = await api.transcribeNote(currentNotebookId, file)
+    await readSSE(stream, (chunk) => {
+      if (chunk.error) throw new Error(chunk.error)
+      if (chunk.text) {
+        rawAccumulated += chunk.text
+        const previewEl = document.getElementById('store-upload-preview')
+        if (previewEl) previewEl.innerHTML = renderMarkdown(rawAccumulated)
+      }
+      if (chunk.done) {
+        savedNote = api.saveNoteToNotebook(currentNotebookId, {
+          id: chunk.noteId,
+          title: chunk.title,
+          content: rawAccumulated,
+          source_file: file.name,
+          preset: 'uploaded',
+        })
+        sidebar.refreshNotebooks()
+        updateWorkspaceHeader()
+      }
+    })
+
+    progressEl.className = 'hidden'
+    listEl?.classList.remove('hidden')
+    renderStoreNotes()
+    showToast(`"${savedNote?.title ?? 'Note'}" saved`, 'success')
+  } catch (err) {
+    progressEl.innerHTML = `<div class="store-upload-error">Failed: ${escHtml(err.message)}</div>`
+    listEl?.classList.remove('hidden')
+  }
 }
 
 async function exportNote(note, format) {
@@ -605,30 +821,6 @@ function initChatPanel(notebookName) {
 
   messages.innerHTML = ''
   addChatBubble('ai', `Hi there! This is the Chat channel for <strong>${escHtml(notebookName ?? 'this notebook')}</strong>. Ask me questions or request summaries regarding the notes stored in this notebook.`)
-
-  // Sync banner — shown when there are notes that may not be in Pinecone yet
-  const notebook = api.fetchNotebooks().find(nb => nb.id === currentNotebookId)
-  const noteCount = notebook?.notes?.length ?? 0
-  if (noteCount > 0) {
-    const banner = document.createElement('div')
-    banner.className = 'chat-sync-banner'
-    banner.innerHTML = `
-      <span>Sync your ${noteCount} note${noteCount !== 1 ? 's' : ''} so the AI can answer questions about them.</span>
-      <button class="btn btn-sm btn-primary" id="btn-chat-sync">Sync Notes</button>
-    `
-    messages.appendChild(banner)
-
-    banner.querySelector('#btn-chat-sync')?.addEventListener('click', async () => {
-      banner.innerHTML = `<span class="chat-sync-progress">Syncing ${noteCount} note${noteCount !== 1 ? 's' : ''}… this may take a moment</span>`
-      try {
-        const result = await api.syncNotebookNotes(currentNotebookId, notebook.notes)
-        banner.innerHTML = `<span class="chat-sync-done">✓ Synced — ${result.totalChunks} chunks indexed. You can now ask questions!</span>`
-        setTimeout(() => banner.remove(), 4000)
-      } catch (err) {
-        banner.innerHTML = `<span style="color:var(--color-danger)">Sync failed: ${escHtml(err.message)}</span>`
-      }
-    })
-  }
 
   // Re-attach send handlers (remove old ones by cloning the button)
   const newSendBtn = sendBtn?.cloneNode(true)

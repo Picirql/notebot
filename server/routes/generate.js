@@ -2,7 +2,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { GoogleGenAI } from '@google/genai'
 import { parseClassResource } from '../services/parser.js'
-import { generateNotes, generateNotesFromMedia, generateNotesFromVideoUrl, chunkMarkdown, extractChunkMetadata } from '../services/llm.js'
+import { generateNotes, generateNotesFromMedia, generateNotesFromVideoUrl, transcribeFromMedia, chunkMarkdown, extractChunkMetadata } from '../services/llm.js'
 import { fetchLinkContent } from '../services/linkFetcher.js'
 import { extractPptxText } from '../services/pptxParser.js'
 import { getEmbedding } from '../services/embeddings.js'
@@ -307,6 +307,56 @@ router.post('/sync', async (req, res) => {
   } catch (err) {
     console.error('[Sync error]', err)
     res.status(500).json({ error: err.message })
+  }
+})
+
+// ── POST /api/transcribe ──────────────────────────────────────────────────────
+
+router.post('/transcribe', uploadSingle, async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+
+  try {
+    const { notebookId } = req.body
+    const apiKey =
+      req.headers['x-api-key'] ||
+      req.headers['authorization']?.replace('Bearer ', '') ||
+      process.env.GEMINI_API_KEY
+
+    if (!req.file) throw new Error('No file provided.')
+
+    const mime = req.file.mimetype
+    const isImage = mime.startsWith('image/')
+    const isPdf = mime === PDF_MIME
+
+    if (!isImage && !isPdf) {
+      throw new Error('Unsupported file type. Please upload an image (JPG, PNG) or PDF.')
+    }
+
+    const noteId = Date.now()
+    const stream = transcribeFromMedia(req.file.buffer, mime, apiKey)
+
+    let fullContent = ''
+    for await (const chunk of stream) {
+      fullContent += chunk
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`)
+    }
+
+    const filename = (req.file.originalname ?? '').replace(/\.[^.]+$/, '')
+    res.write(`data: ${JSON.stringify({
+      done: true,
+      noteId,
+      title: extractTitle(fullContent, filename),
+    })}\n\n`)
+    res.end()
+
+    if (notebookId) {
+      ingestNoteBackground(notebookId, noteId, fullContent, apiKey)
+    }
+  } catch (err) {
+    res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`)
+    res.end()
   }
 })
 

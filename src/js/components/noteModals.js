@@ -1,5 +1,5 @@
 import { showToast } from './toast.js'
-import { renameNoteInNotebook, moveNote, copyNote, fetchNotebooks } from '../services/api.js'
+import { renameNoteInNotebook, moveNote, copyNote, fetchNotebooks, changeNoteDate } from '../services/api.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -123,6 +123,53 @@ export function showRenameNoteModal(note, notebookId, onRenamed) {
 
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') overlay.querySelector('#btn-rennote-save').click()
+  })
+}
+
+// ── 2.1b Change Note Date ─────────────────────────────────────────────────────
+
+export function showChangeDateModal(note, notebookId, onChanged) {
+  const currentDate = new Date(note.created_at).toISOString().split('T')[0]
+
+  const overlay = injectModal(`
+    <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="changedate-title">
+      <div class="settings-card">
+        <div class="settings-card-header">
+          <h2 class="settings-title" id="changedate-title">Change Date</h2>
+          <button class="settings-close" id="btn-changedate-close" aria-label="Close">×</button>
+        </div>
+        <div class="settings-card-body">
+          <label class="settings-label" for="change-date-input">Date</label>
+          <input type="date" id="change-date-input" class="settings-input" value="${currentDate}" />
+        </div>
+        <div class="settings-card-footer">
+          <button class="btn" id="btn-changedate-cancel">Cancel</button>
+          <button class="btn btn-primary" id="btn-changedate-save">Save</button>
+        </div>
+      </div>
+    </div>
+  `)
+
+  onEscClose(overlay)
+
+  const input = overlay.querySelector('#change-date-input')
+  input.focus()
+
+  function close() { closeModal(overlay) }
+
+  overlay.querySelector('#btn-changedate-close').addEventListener('click', close)
+  overlay.querySelector('#btn-changedate-cancel').addEventListener('click', close)
+
+  overlay.querySelector('#btn-changedate-save').addEventListener('click', () => {
+    if (!input.value) return
+    try {
+      changeNoteDate(notebookId, note.id, input.value)
+      showToast('Date updated', 'success')
+      close()
+      onChanged?.()
+    } catch (err) {
+      showToast(`Failed: ${err.message}`, 'error')
+    }
   })
 }
 
