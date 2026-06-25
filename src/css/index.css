@@ -2193,12 +2193,10 @@ pre:has(.hljs) { margin-bottom: 16px; }
   background: hsla(252, 96%, 67%, 0.08);
 }
 
-/* 3-dot dropdown */
+/* 3-dot dropdown — fixed so it escapes the overflow-y:auto scroll container */
 .notebook-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 200;
+  position: fixed;
+  z-index: 9999;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);

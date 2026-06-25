@@ -200,6 +200,9 @@ function renderNotebookList(notebooks) {
       const isOpen = !dropdown.classList.contains('hidden')
       closeActiveDropdown()
       if (!isOpen) {
+        const rect = btn.getBoundingClientRect()
+        dropdown.style.top = `${rect.bottom + 4}px`
+        dropdown.style.right = `${window.innerWidth - rect.right}px`
         dropdown.classList.remove('hidden')
         _activeDropdown = dropdown
       }
