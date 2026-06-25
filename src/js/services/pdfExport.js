@@ -5,9 +5,9 @@ export async function exportNotesToPdf(contentEl, filename) {
   // overflow:auto/hidden ancestor, and isn't hidden by off-screen positioning.
   const clone = contentEl.cloneNode(true)
   clone.style.cssText = [
-    'position:absolute',
-    'left:-9999px',
+    'position:fixed',
     'top:0',
+    'left:0',
     'width:800px',
     'background:#fff',
     'color:#000',
@@ -15,8 +15,18 @@ export async function exportNotesToPdf(contentEl, filename) {
     'font-family:Inter,sans-serif',
     'font-size:14px',
     'line-height:1.6',
+    'animation:none',        // prevent fadeIn starting at opacity:0
+    'opacity:1',             // ensure fully visible for html2canvas
+    'pointer-events:none',
+    'z-index:-9999',
   ].join(';')
   document.body.appendChild(clone)
+
+  // Kill all animations on every descendant so nothing starts at opacity:0
+  clone.querySelectorAll('*').forEach(el => {
+    el.style.animation = 'none'
+    el.style.transition = 'none'
+  })
 
   // Strip internal anchor hrefs so jsPDF doesn't choke on them
   clone.querySelectorAll('a[href^="#"]').forEach(a => a.removeAttribute('href'))
