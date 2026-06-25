@@ -1,5 +1,6 @@
+import html2pdf from 'html2pdf.js'
+
 export async function exportNotesToPdf(contentEl, filename) {
-  const { default: html2pdf } = await import('html2pdf.js')
 
   const anchors = [...contentEl.querySelectorAll('a[href^="#"]')]
   const savedHrefs = anchors.map(a => a.getAttribute('href'))
