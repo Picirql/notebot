@@ -1,63 +1,53 @@
 import html2pdf from 'html2pdf.js'
 
 export async function exportNotesToPdf(contentEl, filename) {
-  // Clone and attach directly to <body> so html2canvas isn't clipped by any
-  // overflow:auto/hidden ancestor, and isn't hidden by off-screen positioning.
+  // html2canvas won't capture elements that are off-screen or have a deeply
+  // negative z-index. Render the content in a full-screen visible overlay so
+  // the canvas capture always succeeds, then tear it down after saving.
+  const overlay = document.createElement('div')
+  overlay.style.cssText = [
+    'position:fixed',
+    'inset:0',
+    'z-index:99999',
+    'background:#fff',
+    'overflow-y:auto',
+    'display:flex',
+    'justify-content:center',
+  ].join(';')
+
   const clone = contentEl.cloneNode(true)
   clone.style.cssText = [
-    'position:fixed',
-    'top:0',
-    'left:0',
     'width:800px',
+    'max-width:100%',
+    'padding:40px',
     'background:#fff',
     'color:#000',
-    'padding:32px',
     'font-family:Inter,sans-serif',
     'font-size:14px',
-    'line-height:1.6',
-    'animation:none',        // prevent fadeIn starting at opacity:0
-    'opacity:1',             // ensure fully visible for html2canvas
-    'pointer-events:none',
-    'z-index:-9999',
+    'line-height:1.7',
+    'animation:none',
+    'opacity:1',
   ].join(';')
-  document.body.appendChild(clone)
 
-  // Kill all animations on every descendant so nothing starts at opacity:0
   clone.querySelectorAll('*').forEach(el => {
     el.style.animation = 'none'
     el.style.transition = 'none'
   })
-
-  // Strip internal anchor hrefs so jsPDF doesn't choke on them
   clone.querySelectorAll('a[href^="#"]').forEach(a => a.removeAttribute('href'))
 
+  overlay.appendChild(clone)
+  document.body.appendChild(overlay)
+
   try {
-    const worker = html2pdf().set({
+    await html2pdf().set({
       margin: 10,
       filename,
       image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 1, useCORS: true, logging: false },
+      html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
       pagebreak: { mode: ['css', 'legacy'] },
-    }).from(clone)
-
-    const pdf = await worker.toPdf().get('pdf')
-
-    const pageW = pdf.internal.pageSize.getWidth()
-    const pageH = pdf.internal.pageSize.getHeight()
-    const innerW = pageW - 20
-    const innerH = pageH - 20
-    const cloneRect = clone.getBoundingClientRect()
-
-    clone.querySelectorAll('h2[id]').forEach(h => {
-      const offsetTop = h.getBoundingClientRect().top - cloneRect.top
-      const mmY = (offsetTop / cloneRect.width) * innerW
-      const pageNumber = Math.max(1, Math.floor(mmY / innerH) + 1)
-      pdf.outline.add(null, h.textContent.trim(), { pageNumber })
-    })
-
-    pdf.save(filename)
+    }).from(clone).save()
   } finally {
-    document.body.removeChild(clone)
+    document.body.removeChild(overlay)
   }
 }
