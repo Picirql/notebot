@@ -769,12 +769,9 @@ async function exportNote(note, format) {
       showToast('Generating PDF…', 'success')
       const tempEl = document.createElement('div')
       tempEl.className = 'note-content'
-      tempEl.style.cssText = 'position:fixed;top:-9999px;left:0;width:800px;background:#fff;color:#000;padding:32px;font-family:Inter,sans-serif;'
       tempEl.innerHTML = renderMarkdown(content)
-      document.body.appendChild(tempEl)
       const { exportNotesToPdf } = await import('./services/pdfExport.js')
       await exportNotesToPdf(tempEl, `${slug}.pdf`)
-      document.body.removeChild(tempEl)
       showToast('Exported as .pdf', 'success')
     } catch (err) {
       showToast(`PDF export failed: ${err.message}`, 'error')
